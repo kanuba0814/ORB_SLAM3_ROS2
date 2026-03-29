@@ -69,6 +69,11 @@ def generate_launch_description():
                         default, the name of the bag will be\
                         ORB_SLAM3_YYYY-MM-DD_HH-mm-ss",
             ),
+            DeclareLaunchArgument(
+                "settings_file",
+                default_value="",
+                description="Override ORB_SLAM3 settings YAML path (absolute). Empty = auto-select by sensor_type.",
+            ),
             IncludeLaunchDescription(
                 PythonLaunchDescriptionSource(
                     PathJoinSubstitution(
@@ -108,6 +113,7 @@ def generate_launch_description():
                     {
                         "sensor_type": LaunchConfiguration("sensor_type"),
                         "use_pangolin": LaunchConfiguration("use_pangolin"),
+                        "settings_file": LaunchConfiguration("settings_file"),
                     }
                 ],
             ),

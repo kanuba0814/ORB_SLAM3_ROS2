@@ -1,0 +1,79 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters - CARLA CAM_FRONT (Pinhole, no distortion)
+# Resolution: 1600x900, FOV: 70 deg
+# fx = fy = width / (2 * tan(fov * pi / 360)) = 1600 / (2 * tan(35 deg)) = 1193.43
+#--------------------------------------------------------------------------------------------
+File.version: "1.0"
+
+Camera.type: "PinHole"
+
+Camera1.fx: 1193.43
+Camera1.fy: 1193.43
+Camera1.cx: 800.0
+Camera1.cy: 450.0
+
+# No distortion in CARLA
+Camera1.k1: 0.0
+Camera1.k2: 0.0
+Camera1.p1: 0.0
+Camera1.p2: 0.0
+
+Camera.width: 1600
+Camera.height: 900
+
+Camera.fps: 11
+
+# Color order (0: BGR, 1: RGB)
+Camera.RGB: 0
+
+#--------------------------------------------------------------------------------------------
+# IMU Parameters (CARLA ideal IMU, near-zero noise)
+# Use very small non-zero values to avoid numerical issues in ORB-SLAM3
+#--------------------------------------------------------------------------------------------
+
+# T_body(imu)_camera: transform from IMU frame to camera frame
+# CAM_FRONT in base_link: (2.225, 0.0, 1.6), RPY=(0,0,0)
+# IMU in base_link:       (0.025, 0.0, 0.0), RPY=(0,0,0)
+# => T_imu_cam = (2.2, 0.0, 1.6), R=Identity
+IMU.T_b_c1: !!opencv-matrix
+   rows: 4
+   cols: 4
+   dt: f
+   data: [1.0, 0.0, 0.0, 2.2,
+          0.0, 1.0, 0.0, 0.0,
+          0.0, 0.0, 1.0, 1.6,
+          0.0, 0.0, 0.0, 1.0]
+
+IMU.InsertKFsWhenLost: 0
+
+# CARLA IMU has zero noise; use minimal values for numerical stability
+IMU.NoiseGyro: 1.0e-4    # rad/s/sqrt(Hz)
+IMU.NoiseAcc:  1.0e-3    # m/s^2/sqrt(Hz)
+IMU.GyroWalk:  1.0e-5    # rad/s^1.5
+IMU.AccWalk:   1.0e-4    # m/s^2.5
+IMU.Frequency: 200.0
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters
+#--------------------------------------------------------------------------------------------
+ORBextractor.nFeatures: 1500
+ORBextractor.scaleFactor: 1.2
+ORBextractor.nLevels: 8
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -3.5
+Viewer.ViewpointF: 500.0

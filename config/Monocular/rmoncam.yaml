@@ -1,0 +1,71 @@
+%YAML:1.0
+
+#--------------------------------------------------------------------------------------------
+# Camera Parameters
+# Source: Kalibr calibration report (cam_kalibr_02_mono8)
+# Model: pinhole + equidistant (Kannala-Brandt)
+# Reprojection error: [-0.000000, -0.000001] +- [0.792016, 0.822005] px
+#--------------------------------------------------------------------------------------------
+File.version: "1.0"
+
+Camera.type: "KannalaBrandt8"
+
+# Camera intrinsics from Kalibr: [fx, fy, cx, cy]
+# [545.4318275957406, 544.808949128241, 343.5108408742363, 226.5228051124848]
+Camera1.fx: 545.4318275957406
+Camera1.fy: 544.808949128241
+Camera1.cx: 343.5108408742363
+Camera1.cy: 226.5228051124848
+
+# Equidistant distortion coefficients (k1, k2, k3, k4)
+# [-0.06683718148822111, -0.009650209768810673, -0.029825075641508617, 0.020281540657900984]
+Camera1.k1: -0.06683718148822111
+Camera1.k2: -0.009650209768810673
+Camera1.k3: -0.029825075641508617
+Camera1.k4: 0.020281540657900984
+
+# Camera resolution
+Camera.width: 640
+Camera.height: 480
+
+# Camera frames per second
+Camera.fps: 30
+
+# Color order of the images (0: BGR, 1: RGB. It is ignored if images are grayscale)
+Camera.RGB: 1
+
+#--------------------------------------------------------------------------------------------
+# ORB Parameters
+#--------------------------------------------------------------------------------------------
+
+# ORB Extractor: Number of features per image
+# 640x480 is moderate resolution; 1250-1500 features is a good range.
+# Use 1500 for slightly denser coverage with the fisheye lens.
+ORBextractor.nFeatures: 1500
+
+# ORB Extractor: Scale factor between levels in the scale pyramid
+ORBextractor.scaleFactor: 1.2
+
+# ORB Extractor: Number of levels in the scale pyramid
+ORBextractor.nLevels: 8
+
+# ORB Extractor: Fast threshold
+# Image is divided in a grid. At each cell FAST are extracted imposing a minimum response.
+# Firstly we impose iniThFAST. If no corners are detected we impose a lower value minThFAST
+# Lower these values if your images have low contrast
+ORBextractor.iniThFAST: 20
+ORBextractor.minThFAST: 7
+
+#--------------------------------------------------------------------------------------------
+# Viewer Parameters
+#--------------------------------------------------------------------------------------------
+Viewer.KeyFrameSize: 0.05
+Viewer.KeyFrameLineWidth: 1.0
+Viewer.GraphLineWidth: 0.9
+Viewer.PointSize: 2.0
+Viewer.CameraSize: 0.08
+Viewer.CameraLineWidth: 3.0
+Viewer.ViewpointX: 0.0
+Viewer.ViewpointY: -0.7
+Viewer.ViewpointZ: -3.5
+Viewer.ViewpointF: 500.0

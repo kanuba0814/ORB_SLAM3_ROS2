@@ -1,0 +1,26 @@
+image_width: 640
+image_height: 480
+camera_name: rmoncam
+camera_matrix:
+  rows: 3
+  cols: 3
+  data: [545.4318275957406, 0.0, 343.5108408742363,
+         0.0, 544.808949128241, 226.5228051124848,
+         0.0, 0.0, 1.0]
+distortion_model: equidistant
+distortion_coefficients:
+  rows: 1
+  cols: 4
+  data: [-0.06683718148822111, -0.009650209768810673, -0.029825075641508617, 0.020281540657900984]
+rectification_matrix:
+  rows: 3
+  cols: 3
+  data: [1.0, 0.0, 0.0,
+         0.0, 1.0, 0.0,
+         0.0, 0.0, 1.0]
+projection_matrix:
+  rows: 3
+  cols: 4
+  data: [545.4318275957406, 0.0, 343.5108408742363, 0.0,
+         0.0, 544.808949128241, 226.5228051124848, 0.0,
+         0.0, 0.0, 1.0, 0.0]

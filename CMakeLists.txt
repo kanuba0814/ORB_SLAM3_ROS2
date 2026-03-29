@@ -37,7 +37,7 @@ find_package(tf2 REQUIRED)
 find_package(tf2_ros REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(cv_bridge REQUIRED)
-find_package(realsense2_description REQUIRED)
+find_package(realsense2_description QUIET)
 find_package(xacro REQUIRED)
 find_package(Sophus REQUIRED)
 find_package(Pangolin REQUIRED)
@@ -49,9 +49,9 @@ find_package(OpenCV REQUIRED)
 # find_package(RTABMap REQUIRED)
 # find_package(imu_filter_madgwick REQUIRED)
 find_package(yaml-cpp REQUIRED)
-find_package(nav2_map_server REQUIRED)
+find_package(nav2_map_server QUIET)
 find_package(ORB_SLAM3 REQUIRED)
-find_package(realsense2)
+find_package(realsense2 QUIET)
 
 if(ORB_SLAM3_LIBRARY)
     message("Found ORB_SLAM3: ${ORB_SLAM3_LIBRARY}")
@@ -80,6 +80,16 @@ set(THIS_PACKAGE_INCLUDE_DEPENDS
   ORB_SLAM3
 )
 
+if(NOT realsense2_description_FOUND)
+  list(REMOVE_ITEM THIS_PACKAGE_INCLUDE_DEPENDS realsense2_description)
+  message(WARNING "realsense2_description not found, building without this optional dependency")
+endif()
+
+if(NOT nav2_map_server_FOUND)
+  list(REMOVE_ITEM THIS_PACKAGE_INCLUDE_DEPENDS nav2_map_server)
+  message(WARNING "nav2_map_server not found, map save-on-shutdown will be disabled")
+endif()
+
 add_executable(imu_mono_node_cpp
   src/imu_mono_realsense.cpp
 )
@@ -90,10 +100,6 @@ add_executable(orb_camera_info_node
 
 add_executable(visualize_node
   src/visualize.cpp
-)
-
-add_executable(orb_alt
-  src/orb_alt.cpp
 )
 
 ament_target_dependencies(imu_mono_node_cpp
@@ -108,11 +114,31 @@ ament_target_dependencies(visualize_node
   PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
 )
 
-ament_target_dependencies(orb_alt
-  PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+set(ORB_SLAM3_ROS2_TARGETS
+  imu_mono_node_cpp
+  orb_camera_info_node
+  visualize_node
 )
 
-set(ORB_SLAM3_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3)
+if(realsense2_FOUND)
+  add_executable(orb_alt
+    src/orb_alt.cpp
+  )
+  ament_target_dependencies(orb_alt
+    PUBLIC ${THIS_PACKAGE_INCLUDE_DEPENDS}
+  )
+  list(APPEND ORB_SLAM3_ROS2_TARGETS orb_alt)
+else()
+  message(WARNING "realsense2 SDK not found, skipping orb_alt target")
+endif()
+
+if(NOT ORB_SLAM3_ROOT_DIR)
+  if(DEFINED ENV{ORB_SLAM3_ROOT_DIR} AND NOT "$ENV{ORB_SLAM3_ROOT_DIR}" STREQUAL "")
+    set(ORB_SLAM3_ROOT_DIR "$ENV{ORB_SLAM3_ROOT_DIR}")
+  else()
+    get_filename_component(ORB_SLAM3_ROOT_DIR "${ORB_SLAM3_INCLUDE_DIR}" DIRECTORY)
+  endif()
+endif()
 
 include_directories(
     ${ORB_SLAM3_ROOT_DIR}/include
@@ -126,14 +152,20 @@ target_include_directories(imu_mono_node_cpp PUBLIC
     ${ORB_SLAM3_INCLUDE_DIR} ${OpenCV_INCLUDE_DIRS}
 )
 
+if(nav2_map_server_FOUND)
+  target_compile_definitions(imu_mono_node_cpp PRIVATE ORB_SLAM3_ROS2_HAS_NAV2_MAP_SERVER=1)
+endif()
+
 target_link_libraries(imu_mono_node_cpp PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES}
     ${libpointmatcher_LIBRARIES} ${libpointmatcher_ros_LIBRARIES} ${OpenCV_LIBS})
 target_link_libraries(orb_camera_info_node PUBLIC yaml-cpp)
 target_link_libraries(orb_camera_info_node PUBLIC ${PCL_LIBRARIES})
-target_link_libraries(orb_alt PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS}
-    ${realsense2_LIBRARY})
+if(TARGET orb_alt)
+  target_link_libraries(orb_alt PUBLIC ${ORB_SLAM3_LIBRARY} ${PCL_LIBRARIES} ${OpenCV_LIBS}
+      ${realsense2_LIBRARY})
+endif()
 
-install(TARGETS imu_mono_node_cpp orb_camera_info_node visualize_node orb_alt
+install(TARGETS ${ORB_SLAM3_ROS2_TARGETS}
     DESTINATION lib/${PROJECT_NAME}
 )
 
@@ -145,11 +177,11 @@ install(FILES ${ORB_SLAM3_LIBRARY}
         DESTINATION lib
 )
 
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/g2o/lib/libg2o.so
+install(FILES ${ORB_SLAM3_ROOT_DIR}/Thirdparty/g2o/lib/libg2o.so
         DESTINATION lib
 )
 
-install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/DBoW2/lib/libDBoW2.so
+install(FILES ${ORB_SLAM3_ROOT_DIR}/Thirdparty/DBoW2/lib/libDBoW2.so
         DESTINATION lib
 )
 
@@ -157,6 +189,7 @@ install(FILES ${CMAKE_CURRENT_SOURCE_DIR}/ORB_SLAM3/Thirdparty/DBoW2/lib/libDBoW
 install(
   DIRECTORY bags/
   DESTINATION share/${PROJECT_NAME}/bags
+  OPTIONAL
 )
 
 # install config files

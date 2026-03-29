@@ -12,3 +12,11 @@ videos/
 *.pcd
 occupancy_grids/
 images/
+
+# Build artifacts
+build/
+install/
+log/
+
+# Output data
+output/

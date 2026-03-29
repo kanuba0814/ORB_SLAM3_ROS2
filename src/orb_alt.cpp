@@ -46,6 +46,35 @@
 
 using namespace std::chrono_literals;
 
+static std::string resolve_default_vocabulary_path()
+{
+  const char *vocab_env = std::getenv("ORB_SLAM3_VOCAB_PATH");
+  if (vocab_env != nullptr && std::filesystem::exists(vocab_env)) {
+    return std::string(vocab_env);
+  }
+
+  const char *root_env = std::getenv("ORB_SLAM3_ROOT_DIR");
+  std::vector<std::string> candidates = {
+    std::string(PROJECT_PATH) + "/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+    std::string(PROJECT_PATH) + "/Vocabulary/ORBvoc.txt",
+    "/home/gxxl/slam_ws_v2/libs/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+    "/usr/local/share/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+    "/usr/share/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+  };
+
+  if (root_env != nullptr) {
+    candidates.insert(candidates.begin(), std::string(root_env) + "/Vocabulary/ORBvoc.txt");
+  }
+
+  for (const auto &path : candidates) {
+    if (std::filesystem::exists(path)) {
+      return path;
+    }
+  }
+
+  return std::string(PROJECT_PATH) + "/ORB_SLAM3/Vocabulary/ORBvoc.txt";
+}
+
 static rs2_option get_sensor_option(const rs2::sensor &sensor)
 {
   // Sensors usually have several options to control their properties
@@ -100,8 +129,7 @@ public:
     use_pangolin = get_parameter("use_pangolin").as_bool();
 
     // set the sensor type based on parameter
-    vocabulary_file_path_ =
-      std::string(PROJECT_PATH) + "/ORB_SLAM3/Vocabulary/ORBvoc.txt";
+    vocabulary_file_path_ = resolve_default_vocabulary_path();
     if (sensor_type_param == "monocular") {
       sensor_type = ORB_SLAM3::System::MONOCULAR;
       settings_file_path_ =

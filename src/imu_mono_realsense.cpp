@@ -29,11 +29,15 @@
 #include <tf2/LinearMath/Quaternion.h>
 #include <tf2_ros/transform_broadcaster.h>
 
+#ifdef ORB_SLAM3_ROS2_HAS_NAV2_MAP_SERVER
 #include "nav2_map_server/map_io.hpp"
+#endif
 
 #include <chrono>
+#include <cstdlib>
 #include <filesystem>
 #include <sstream>
+#include <vector>
 
 #include <cv_bridge/cv_bridge.h>
 
@@ -45,22 +49,60 @@
 using namespace std::chrono_literals;
 using std::placeholders::_1, std::placeholders::_2;
 
+static std::string resolve_default_vocabulary_path()
+{
+  const char *vocab_env = std::getenv("ORB_SLAM3_VOCAB_PATH");
+  if (vocab_env != nullptr && std::filesystem::exists(vocab_env)) {
+    return std::string(vocab_env);
+  }
+
+  const char *root_env = std::getenv("ORB_SLAM3_ROOT_DIR");
+  std::vector<std::string> candidates = {
+    std::string(PROJECT_PATH) + "/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+    std::string(PROJECT_PATH) + "/Vocabulary/ORBvoc.txt",
+    "/home/gxxl/slam_ws_v2/libs/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+    "/usr/local/share/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+    "/usr/share/ORB_SLAM3/Vocabulary/ORBvoc.txt",
+  };
+
+  if (root_env != nullptr) {
+    candidates.insert(candidates.begin(), std::string(root_env) + "/Vocabulary/ORBvoc.txt");
+  }
+
+  for (const auto &path : candidates) {
+    if (std::filesystem::exists(path)) {
+      return path;
+    }
+  }
+
+  return std::string(PROJECT_PATH) + "/ORB_SLAM3/Vocabulary/ORBvoc.txt";
+}
+
 class ImuMonoRealSense : public rclcpp::Node {
 public:
   ImuMonoRealSense()
     : Node("imu_mono_realsense"),
-      vocabulary_file_path(std::string(PROJECT_PATH) +
-                           "/ORB_SLAM3/Vocabulary/ORBvoc.txt"),
+      vocabulary_file_path(resolve_default_vocabulary_path()),
       inertial_ba1_(false), inertial_ba2_(false)
   {
 
     // declare parameters
     declare_parameter("sensor_type", "imu-monocular");
     declare_parameter("use_pangolin", true);
+    declare_parameter("image_topic", "camera/camera/color/image_raw");
+    declare_parameter("imu_topic", "camera/camera/imu");
+    declare_parameter("settings_file", "");
+    declare_parameter("cam_imu_time_offset", 0.0);
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
     use_pangolin = get_parameter("use_pangolin").as_bool();
+    image_topic_ = get_parameter("image_topic").as_string();
+    imu_topic_ = get_parameter("imu_topic").as_string();
+    cam_imu_time_offset_ = get_parameter("cam_imu_time_offset").as_double();
+    RCLCPP_INFO(get_logger(),
+                "Camera-IMU time offset: %.6f s (t_imu = t_cam + offset)",
+                cam_imu_time_offset_);
 
     // define callback groups
     image_callback_group_ =
@@ -78,19 +120,25 @@ public:
     imu_options.callback_group = imu_callback_group_;
 
     // set the sensor type based on parameter
+    std::string settings_file_param = get_parameter("settings_file").as_string();
+
     ORB_SLAM3::System::eSensor sensor_type;
     if (sensor_type_param == "monocular") {
       sensor_type = ORB_SLAM3::System::MONOCULAR;
-      settings_file_path =
-        std::string(PROJECT_PATH) + "/config/Monocular/RealSense_D435i.yaml";
+      settings_file_path = settings_file_param.empty()
+        ? std::string(PROJECT_PATH) + "/config/Monocular/RealSense_D435i.yaml"
+        : settings_file_param;
     } else if (sensor_type_param == "imu-monocular") {
       sensor_type = ORB_SLAM3::System::IMU_MONOCULAR;
-      settings_file_path = std::string(PROJECT_PATH) +
-                           "/config/Monocular-Inertial/RealSense_D435i.yaml";
+      settings_file_path = settings_file_param.empty()
+        ? std::string(PROJECT_PATH) + "/config/Monocular-Inertial/RealSense_D435i.yaml"
+        : settings_file_param;
     } else {
       RCLCPP_ERROR(get_logger(), "Sensor type not recognized");
       rclcpp::shutdown();
     }
+
+    RCLCPP_INFO(get_logger(), "Settings file: %s", settings_file_path.c_str());
 
     RCLCPP_INFO_STREAM(get_logger(),
                        "vocabulary_file_path: " << vocabulary_file_path);
@@ -115,16 +163,16 @@ public:
     // create subscriptions
     rclcpp::QoS image_qos(rclcpp::KeepLast(10));
     image_qos.reliability(RMW_QOS_POLICY_RELIABILITY_RELIABLE);
-    image_qos.durability(RMW_QOS_POLICY_DURABILITY_TRANSIENT_LOCAL);
+    image_qos.durability(RMW_QOS_POLICY_DURABILITY_VOLATILE);
     image_sub = create_subscription<sensor_msgs::msg::Image>(
-      "camera/camera/color/image_raw", image_qos,
+      image_topic_, image_qos,
       std::bind(&ImuMonoRealSense::image_callback, this, _1), image_options);
 
     rclcpp::QoS imu_qos(rclcpp::KeepLast(10));
     imu_qos.reliability(RMW_QOS_POLICY_RELIABILITY_BEST_EFFORT);
     imu_qos.durability(RMW_QOS_POLICY_DURABILITY_VOLATILE);
     imu_sub = create_subscription<sensor_msgs::msg::Imu>(
-      "camera/camera/imu", imu_qos,
+      imu_topic_, imu_qos,
       std::bind(&ImuMonoRealSense::imu_callback, this, _1), imu_options);
 
     // tf broadcaster
@@ -160,6 +208,7 @@ public:
       pcl::io::savePCDFileBinary(std::string(PROJECT_PATH) + "/output/" +
                                    timestamp_ + "/cloud/" + timestamp_ + ".pcd",
                                  live_pcl_cloud_);
+      #ifdef ORB_SLAM3_ROS2_HAS_NAV2_MAP_SERVER
       nav2_map_server::SaveParameters save_params;
       save_params.map_file_name = std::string(PROJECT_PATH) + "/output/" +
                                   timestamp_ + "/grid/" + timestamp_;
@@ -167,6 +216,10 @@ public:
       save_params.free_thresh = 0.196;
       save_params.occupied_thresh = 0.65;
       nav2_map_server::saveMapToFile(*live_occupancy_grid_, save_params);
+      #else
+      RCLCPP_WARN(get_logger(),
+                  "nav2_map_server not found at build time; skipping occupancy grid save");
+      #endif
     });
 
     initialize_variables();
@@ -330,17 +383,17 @@ private:
       cv::Mat imageFrame = get_image(imgPtr);
       double tImage =
         imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
+      tImage += cam_imu_time_offset_;
 
       vector<ORB_SLAM3::IMU::Point> vImuMeas;
 
-      // package all the imu data for this image for orbslam3 to process
       buf_mutex_imu_.lock();
       while (!imu_buf_.empty()) {
         auto imuPtr = imu_buf_.front();
-        imu_buf_.pop();
         double tIMU =
           imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
-
+        if (tIMU > tImage) break;
+        imu_buf_.pop();
         cv::Point3f acc(imuPtr->linear_acceleration.x,
                         imuPtr->linear_acceleration.y,
                         imuPtr->linear_acceleration.z);
@@ -348,7 +401,6 @@ private:
                         imuPtr->angular_velocity.z);
         vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
       }
-
       buf_mutex_imu_.unlock();
 
       if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
@@ -372,8 +424,9 @@ private:
             Tcw_.setQuaternion(Tcw.unit_quaternion());
           }
         }
-        cv::Mat pretty_frame = orb_slam3_system_->getPrettyFrame();
-        video_writer_.write(pretty_frame);
+        // Some ORB_SLAM3 forks expose getPrettyFrame(); vanilla ORB_SLAM3 does not.
+        // Fallback to writing the input frame so builds stay compatible.
+        video_writer_.write(imageFrame);
 
       } catch (const std::exception &e) {
         RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
@@ -408,7 +461,9 @@ private:
     unique_lock<mutex> lock(orbslam3_mutex_);
 
     geometry_msgs::msg::Pose pose;
-    if (orb_slam3_system_->isImuInitialized()) {
+    // Some custom forks expose isImuInitialized(); vanilla ORB_SLAM3 does not.
+    // Keep publishing pose based on latest successful tracking result.
+    if (true) {
       rclcpp::Time time_now = get_clock()->now();
       auto Twc = Tcw_.inverse();
 
@@ -493,41 +548,11 @@ private:
       live_map_tf.child_frame_id = "live_map";
       tf_broadcaster->sendTransform(live_map_tf);
 
-      live_pcl_cloud_ = orb_slam3_system_->GetMapPCL();
-
-      pcl::PointCloud<pcl::PointXYZ>::Ptr live_ptr =
-        std::make_shared<pcl::PointCloud<pcl::PointXYZ>>(live_pcl_cloud_);
-
-      pcl::PointCloud<pcl::PointXYZ>::Ptr filtered_cloud_ptr(
-        new pcl::PointCloud<pcl::PointXYZ>);
-      filtered_cloud_ptr = filter_point_cloud(live_ptr);
-
-      filtered_cloud_ptr->width = filtered_cloud_ptr->points.size();
-      pcl::toROSMsg(*filtered_cloud_ptr, live_pcl_cloud_msg_);
-
-      // this can go
-      // live_occupancy_grid_ = point_cloud_to_occupancy_grid(filtered_cloud_ptr);
-      // live_occupancy_grid_->header.stamp = time_now;
-      // live_occupancy_grid_->header.frame_id = "live_map";
-      // live_occupancy_grid_publisher_->publish(*live_occupancy_grid_);
-
-      live_pcl_cloud_msg_.header.stamp = time_now;
-      live_pcl_cloud_msg_.header.frame_id = "live_map";
-      live_point_cloud_publisher_->publish(live_pcl_cloud_msg_);
+      // Some custom forks expose GetMapPCL(); vanilla ORB_SLAM3 does not.
+      // Keep the node functional without live map cloud publishing.
     } else {
       // RCLCPP_INFO_STREAM(get_logger(), "IMU not initialized");
       initialize_variables();
-    }
-    if (!inertial_ba1_ && orb_slam3_system_->GetInertialBA1()) {
-      inertial_ba1_ = true;
-      initialize_variables();
-      RCLCPP_INFO(get_logger(), "Inertial BA1 complete");
-    }
-
-    if (!inertial_ba2_ && orb_slam3_system_->GetInertialBA2()) {
-      inertial_ba2_ = true;
-      initialize_variables();
-      RCLCPP_INFO(get_logger(), "Inertial BA2 complete");
     }
   }
 
@@ -556,6 +581,9 @@ private:
 
   std::string sensor_type_param;
   bool use_pangolin;
+  std::string image_topic_;
+  std::string imu_topic_;
+  double cam_imu_time_offset_{0.0};
 
   std::vector<geometry_msgs::msg::Vector3> vGyro;
   std::vector<double> vGyro_times;

@@ -72,11 +72,13 @@ IMU.T_b_c1: !!opencv-matrix
 # Do not insert KFs when recently lost (helps with IMU-only tracking)
 IMU.InsertKFsWhenLost: 0
 
-# IMU noise parameters  (with ~2x safety factor applied)
-IMU.NoiseGyro: 1.7453e-04   # rad/s/sqrt(Hz)  (datasheet 8.73e-5 x2)
-IMU.NoiseAcc:  1.1768e-03   # m/s^2/sqrt(Hz)  (datasheet 5.88e-4 x2)
-IMU.GyroWalk:  3.8786e-05   # rad/s^1.5       (datasheet 1.94e-5 x2)
-IMU.AccWalk:   6.8647e-04   # m/s^2.5         (datasheet 3.43e-4 x2)
+# IMU noise parameters  (with ~10x safety factor applied)
+# 2x was too tight for real-world USB IMU → scale estimation failure.
+# 10x is standard for non-lab deployment; tune down if init is too slow.
+IMU.NoiseGyro: 8.7266e-04   # rad/s/sqrt(Hz)  (datasheet 8.73e-5 x10)
+IMU.NoiseAcc:  5.8840e-03   # m/s^2/sqrt(Hz)  (datasheet 5.88e-4 x10)
+IMU.GyroWalk:  1.9393e-04   # rad/s^1.5       (datasheet 1.94e-5 x10)
+IMU.AccWalk:   3.4323e-03   # m/s^2.5         (datasheet 3.43e-4 x10)
 IMU.Frequency: 200.0        # Hz – H30 configured at 200Hz output rate
 
 #--------------------------------------------------------------------------------------------

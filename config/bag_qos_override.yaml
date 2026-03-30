@@ -1,0 +1,13 @@
+# QoS override for ros2 bag play to match ORB-SLAM3 subscriber expectations.
+# Usage: ros2 bag play <bag> --qos-profile-overrides-path <this_file>
+/sync/imu:
+  reliability: best_effort
+  durability: volatile
+  history: keep_last
+  depth: 50
+
+/sync/image_raw:
+  reliability: reliable
+  durability: volatile
+  history: keep_last
+  depth: 10

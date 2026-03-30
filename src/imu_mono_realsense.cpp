@@ -33,12 +33,13 @@
 #include "nav2_map_server/map_io.hpp"
 #endif
 
-#include <algorithm>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
 #include <sstream>
 #include <vector>
+#include <atomic>
+#include <thread>
 
 #include <cv_bridge/cv_bridge.h>
 
@@ -49,6 +50,8 @@
 
 using namespace std::chrono_literals;
 using std::placeholders::_1, std::placeholders::_2;
+
+static const int kSyncSleepMs = 1;  // SyncWithImu polling interval
 
 static std::string resolve_default_vocabulary_path()
 {
@@ -79,45 +82,19 @@ static std::string resolve_default_vocabulary_path()
   return std::string(PROJECT_PATH) + "/ORB_SLAM3/Vocabulary/ORBvoc.txt";
 }
 
-/// Lightweight IMU sample for interpolation
-struct ImuSample {
-  double t;
-  cv::Point3f acc;
-  cv::Point3f gyr;
-};
-
-/// Linear interpolation between two IMU samples at target time
-static ORB_SLAM3::IMU::Point interpolate_imu(
-  const ImuSample &s0, const ImuSample &s1, double t_target)
-{
-  double alpha = (s1.t > s0.t)
-    ? std::max(0.0, std::min((t_target - s0.t) / (s1.t - s0.t), 1.0))
-    : 0.0;
-  float a = static_cast<float>(alpha);
-  cv::Point3f acc = s0.acc * (1.0f - a) + s1.acc * a;
-  cv::Point3f gyr = s0.gyr * (1.0f - a) + s1.gyr * a;
-  return ORB_SLAM3::IMU::Point(acc, gyr, t_target);
-}
-
-/// Convert ROS Imu message to ImuSample
-static ImuSample to_imu_sample(const sensor_msgs::msg::Imu::SharedPtr &msg)
-{
-  double t = msg->header.stamp.sec + msg->header.stamp.nanosec * 1e-9;
-  cv::Point3f acc(static_cast<float>(msg->linear_acceleration.x),
-                  static_cast<float>(msg->linear_acceleration.y),
-                  static_cast<float>(msg->linear_acceleration.z));
-  cv::Point3f gyr(static_cast<float>(msg->angular_velocity.x),
-                  static_cast<float>(msg->angular_velocity.y),
-                  static_cast<float>(msg->angular_velocity.z));
-  return {t, acc, gyr};
-}
-
 class ImuMonoRealSense : public rclcpp::Node {
 public:
+  ~ImuMonoRealSense()
+  {
+    sync_running_ = false;
+    if (sync_thread_.joinable()) sync_thread_.join();
+  }
+
   ImuMonoRealSense()
     : Node("imu_mono_realsense"),
       vocabulary_file_path(resolve_default_vocabulary_path()),
-      inertial_ba1_(false), inertial_ba2_(false)
+      inertial_ba1_(false), inertial_ba2_(false),
+      sync_running_(true)
   {
 
     // declare parameters
@@ -258,6 +235,10 @@ public:
 
     initialize_variables();
 
+    // Start the synchronisation thread (matches official ORB_SLAM3 ROS wrapper)
+    sync_thread_ = std::thread(&ImuMonoRealSense::SyncWithImu, this);
+    RCLCPP_INFO(get_logger(), "SyncWithImu thread started");
+
     std::string orb_slam_video_path = std::string(PROJECT_PATH) + "/output/" +
                                       timestamp_ + "/video/" + timestamp_ +
                                       ".mp4";
@@ -396,139 +377,104 @@ private:
     }
   }
 
+  // ── image_callback: lightweight, only buffers ───────────────────
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
+    // Republish with ROS time for external consumers
     rclcpp::Time time_now = get_clock()->now();
-
     sensor_msgs::msg::Image::SharedPtr msg_out =
       std::make_shared<sensor_msgs::msg::Image>(*msg);
     msg_out->header.stamp = time_now;
     msg_out->header.frame_id = "base_link";
     orb_image_publisher_->publish(*msg_out);
 
+    // Push to buffer; SyncWithImu thread will consume
+    std::lock_guard<std::mutex> lock(buf_mutex_img_);
     img_buf_.push(msg);
+  }
 
-    // Process all queued images
-    while (!img_buf_.empty()) {
-      auto imgPtr = img_buf_.front();
-      img_buf_.pop();
+  // ── SyncWithImu: dedicated thread (matches official ORB_SLAM3 wrapper) ──
+  void SyncWithImu()
+  {
+    while (sync_running_ && rclcpp::ok()) {
+      double tIm = 0;
+      bool ready = false;
+
+      // Check if we have an image AND enough IMU data
+      {
+        std::lock_guard<std::mutex> lock_img(buf_mutex_img_);
+        std::lock_guard<std::mutex> lock_imu(buf_mutex_imu_);
+        if (!img_buf_.empty() && !imu_buf_.empty()) {
+          auto imgPtr = img_buf_.front();
+          tIm = imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
+          tIm += cam_imu_time_offset_;
+
+          // Wait until IMU data covers past the image timestamp
+          double tIMU_back = imu_buf_.back()->header.stamp.sec
+                           + imu_buf_.back()->header.stamp.nanosec * 1e-9;
+          ready = (tIm <= tIMU_back);
+        }
+      }
+
+      if (!ready) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(kSyncSleepMs));
+        continue;
+      }
+
+      // Pop image
+      sensor_msgs::msg::Image::SharedPtr imgPtr;
+      {
+        std::lock_guard<std::mutex> lock(buf_mutex_img_);
+        imgPtr = img_buf_.front();
+        img_buf_.pop();
+      }
 
       cv::Mat imageFrame = get_image(imgPtr);
-      double tImage =
-        imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
-      tImage += cam_imu_time_offset_;
+      tIm = imgPtr->header.stamp.sec + imgPtr->header.stamp.nanosec * 1e-9;
+      tIm += cam_imu_time_offset_;
 
-      // ── Interpolated IMU extraction ──────────────────────────
+      // Collect all IMU measurements up to image timestamp
       vector<ORB_SLAM3::IMU::Point> vImuMeas;
-
-      buf_mutex_imu_.lock();
-
-      // (A) Collect raw IMU samples up to tImage
-      std::vector<ImuSample> raw_samples;
-      if (has_last_imu_) {
-        raw_samples.push_back(last_imu_before_image_);
-      }
-
-      ImuSample next_imu{};
-      bool has_next_imu = false;
-
-      while (!imu_buf_.empty()) {
-        auto imuPtr = imu_buf_.front();
-        ImuSample s = to_imu_sample(imuPtr);
-        if (s.t > tImage) {
-          next_imu = s;       // peek but do NOT pop
-          has_next_imu = true;
-          break;
-        }
-        imu_buf_.pop();
-        raw_samples.push_back(s);
-      }
-
-      buf_mutex_imu_.unlock();
-
-      // (B) Need at least 2 samples for interpolation
-      if (raw_samples.size() < 2 && sensor_type_param == "imu-monocular") {
-        if (!raw_samples.empty()) {
-          last_imu_before_image_ = raw_samples.back();
-          has_last_imu_ = true;
-        }
-        RCLCPP_DEBUG(get_logger(),
-          "Waiting for IMU data: only %zu samples at t=%.4f",
-          raw_samples.size(), tImage);
-        return;
-      }
-
-      // (C) Build interpolated IMU sequence covering [prev_image_time_, tImage]
-
-      // C1: Interpolated start point at prev_image_time_ (skip on first frame)
-      size_t start_idx = 0;
-      if (prev_image_time_ > 0 && raw_samples.size() >= 2) {
-        for (size_t i = 0; i + 1 < raw_samples.size(); ++i) {
-          if (raw_samples[i].t <= prev_image_time_ &&
-              raw_samples[i + 1].t > prev_image_time_) {
-            vImuMeas.push_back(
-              interpolate_imu(raw_samples[i], raw_samples[i + 1],
-                              prev_image_time_));
-            start_idx = i + 1;  // skip samples before prev_image_time_
-            break;
-          }
+      {
+        std::lock_guard<std::mutex> lock(buf_mutex_imu_);
+        while (!imu_buf_.empty()) {
+          auto imuPtr = imu_buf_.front();
+          double tIMU =
+            imuPtr->header.stamp.sec + imuPtr->header.stamp.nanosec * 1e-9;
+          if (tIMU > tIm) break;
+          imu_buf_.pop();
+          cv::Point3f acc(imuPtr->linear_acceleration.x,
+                          imuPtr->linear_acceleration.y,
+                          imuPtr->linear_acceleration.z);
+          cv::Point3f gyr(imuPtr->angular_velocity.x,
+                          imuPtr->angular_velocity.y,
+                          imuPtr->angular_velocity.z);
+          vImuMeas.push_back(ORB_SLAM3::IMU::Point(acc, gyr, tIMU));
         }
       }
 
-      // C2: Add original IMU samples in (prev_image_time_, tImage)
-      for (size_t i = start_idx; i < raw_samples.size(); ++i) {
-        const auto &s = raw_samples[i];
-        if (s.t > prev_image_time_ && s.t < tImage) {
-          vImuMeas.push_back(ORB_SLAM3::IMU::Point(s.acc, s.gyr, s.t));
-        }
-      }
-
-      // C3: Interpolated end point at tImage
-      if (!raw_samples.empty() && has_next_imu) {
-        vImuMeas.push_back(
-          interpolate_imu(raw_samples.back(), next_imu, tImage));
-      } else if (raw_samples.size() >= 2) {
-        vImuMeas.push_back(
-          interpolate_imu(raw_samples[raw_samples.size() - 2],
-                          raw_samples.back(), tImage));
-      }
-
-      // (D) Save state for next frame
-      prev_image_time_ = tImage;
-      if (!raw_samples.empty()) {
-        last_imu_before_image_ = raw_samples.back();
-        has_last_imu_ = true;
-      }
-
-      RCLCPP_DEBUG(get_logger(),
-        "Frame t=%.4f: %zu IMU pts, span [%.4f, %.4f]",
-        tImage, vImuMeas.size(),
-        vImuMeas.empty() ? 0.0 : vImuMeas.front().t,
-        vImuMeas.empty() ? 0.0 : vImuMeas.back().t);
-
-      // ── SLAM tracking ────────────────────────────────────────
-      if (vImuMeas.empty() && sensor_type_param == "imu-monocular") {
-        return;
-      }
-
+      // Track
       try {
         if (sensor_type_param == "monocular") {
-          auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tImage);
+          auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tIm);
+          Tcw_.translation() = Tcw.translation();
+          Tcw_.setQuaternion(Tcw.unit_quaternion());
+        } else if (vImuMeas.size() > 1) {
+          auto Tcw =
+            orb_slam3_system_->TrackMonocular(imageFrame, tIm, vImuMeas);
           Tcw_.translation() = Tcw.translation();
           Tcw_.setQuaternion(Tcw.unit_quaternion());
         } else {
-          if (vImuMeas.size() > 1) {
-            auto Tcw =
-              orb_slam3_system_->TrackMonocular(imageFrame, tImage, vImuMeas);
-            Tcw_.translation() = Tcw.translation();
-            Tcw_.setQuaternion(Tcw.unit_quaternion());
-          }
+          RCLCPP_WARN_THROTTLE(get_logger(), *get_clock(), 2000,
+            "Only %zu IMU meas for frame at t=%.3f, skipping",
+            vImuMeas.size(), tIm);
         }
         video_writer_.write(imageFrame);
-
       } catch (const std::exception &e) {
         RCLCPP_ERROR(get_logger(), "SLAM processing exception: %s", e.what());
       }
+
+      std::this_thread::sleep_for(std::chrono::milliseconds(kSyncSleepMs));
     }
   }
 
@@ -683,10 +629,10 @@ private:
   std::string imu_topic_;
   double cam_imu_time_offset_{0.0};
 
-  // Interpolation sync state
-  double prev_image_time_{-1.0};
-  ImuSample last_imu_before_image_{};
-  bool has_last_imu_{false};
+  std::vector<geometry_msgs::msg::Vector3> vGyro;
+  std::vector<double> vGyro_times;
+  std::vector<geometry_msgs::msg::Vector3> vAccel;
+  std::vector<double> vAccel_times;
 
   queue<sensor_msgs::msg::Imu::SharedPtr> imu_buf_;
   queue<sensor_msgs::msg::Image::SharedPtr> img_buf_;
@@ -707,12 +653,19 @@ private:
 
   cv::VideoWriter video_writer_;
   std::string timestamp_;
+
+  std::thread sync_thread_;
+  std::atomic<bool> sync_running_;
 };
 
 int main(int argc, char *argv[])
 {
   rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<ImuMonoRealSense>());
+  auto node = std::make_shared<ImuMonoRealSense>();
+  // Use MultiThreadedExecutor so IMU and image callbacks run in parallel
+  rclcpp::executors::MultiThreadedExecutor executor(rclcpp::ExecutorOptions(), 4);
+  executor.add_node(node);
+  executor.spin();
   rclcpp::shutdown();
   return 0;
 }

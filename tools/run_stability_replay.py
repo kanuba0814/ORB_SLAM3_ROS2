@@ -91,7 +91,7 @@ def read_bag_topics(bag_path: Path) -> set[str]:
     return topics
 
 
-def preflight_replay(args: argparse.Namespace, bag_path: Path) -> None:
+def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]:
     if not bag_path.exists():
         raise FileNotFoundError(f"bag path does not exist: {bag_path}")
     if not bag_path.is_dir():
@@ -124,13 +124,32 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> None:
             "preflight: ignoring non-replay bag topics: " + ", ".join(ignored),
             file=sys.stderr,
         )
+    return {
+        "bag_topics": sorted(topics),
+        "ignored_bag_topics": ignored,
+        "selected_topics": {
+            "image": args.image_topic,
+            "imu": args.imu_topic,
+        },
+        "settings_file": str(settings_file),
+        "qos_profile_overrides_path": (
+            str(qos_path) if args.qos_profile_overrides_path else ""
+        ),
+    }
 
 
-def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]], output_dir: Path) -> None:
+def write_aggregate(
+    label: str,
+    bag_path: Path,
+    summaries: list[dict[str, Any]],
+    output_dir: Path,
+    preflight: dict[str, Any] | None = None,
+) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
     aggregate = {
         "label": label,
         "bag_path": str(bag_path),
+        "preflight": preflight or {},
         "run_count": len(summaries),
         "pass_count": sum(1 for item in summaries if item.get("stability_pass")),
         "all_passed": bool(summaries) and all(
@@ -228,6 +247,12 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         f"# {label}",
         "",
         f"- bag_path: `{bag_path}`",
+        "- selected_image_topic: "
+        f"`{(preflight or {}).get('selected_topics', {}).get('image')}`",
+        "- selected_imu_topic: "
+        f"`{(preflight or {}).get('selected_topics', {}).get('imu')}`",
+        "- ignored_bag_topics: "
+        f"`{', '.join((preflight or {}).get('ignored_bag_topics', []))}`",
         f"- run_count: `{len(summaries)}`",
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",
@@ -309,9 +334,10 @@ def main() -> int:
         parser.error("--runs must be at least 1")
 
     bag_path = read_latest_bag(args.bag_path, args.latest_file)
+    preflight_info: dict[str, Any] | None = None
     if args.preflight:
         try:
-            preflight_replay(args, bag_path)
+            preflight_info = preflight_replay(args, bag_path)
         except Exception as exc:
             parser.error(f"preflight failed: {exc}")
     if args.preflight_only:
@@ -361,7 +387,7 @@ def main() -> int:
         if returncode != 0:
             print(f"run {run_index} returned {returncode}", file=sys.stderr)
 
-    write_aggregate(args.label, bag_path, summaries, args.output_dir)
+    write_aggregate(args.label, bag_path, summaries, args.output_dir, preflight_info)
     return 0 if all(
         item.get("stability_pass") and item.get("returncode") == 0
         for item in summaries

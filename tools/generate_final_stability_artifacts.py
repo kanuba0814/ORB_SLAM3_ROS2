@@ -465,9 +465,12 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
     preflight = aggregate.get("preflight")
     if not isinstance(preflight, dict):
         raise ValueError("aggregate is missing replay preflight metadata")
+    first_command = runs[0].get("command") if runs else None
     for index, run in enumerate(runs, start=1):
         if not isinstance(run, dict):
             raise ValueError(f"run {index} is not a JSON object")
+        if run.get("command") != first_command:
+            raise ValueError(f"run {index} command differs from run 1 command")
         if int(run.get("run_index", 0) or 0) != index:
             raise ValueError(
                 f"run {index} has run_index={run.get('run_index')}, expected {index}"

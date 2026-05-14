@@ -238,6 +238,15 @@ def main() -> int:
             "run 1 has returncode=1",
         )
 
+        mixed_command = base_aggregate()
+        replace_command_arg(mixed_command["runs"][1], "rate:=1.0", "rate:=0.5")
+        expect_failure(
+            root,
+            "mixed_command",
+            mixed_command,
+            "run 2 command differs from run 1 command",
+        )
+
         run_index_mismatch = base_aggregate()
         run_index_mismatch["runs"][1]["run_index"] = 99
         expect_failure(

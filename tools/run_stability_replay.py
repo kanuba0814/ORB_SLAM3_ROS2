@@ -89,6 +89,7 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
     csv_path = output_dir / f"{label}.csv"
     fieldnames = [
         "run",
+        "returncode",
         "stability_pass",
         "required_v2_tags_present",
         "imu_initialized",
@@ -124,6 +125,7 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         for index, item in enumerate(summaries, start=1):
             writer.writerow({
                 "run": index,
+                "returncode": item.get("returncode"),
                 "stability_pass": item.get("stability_pass"),
                 "required_v2_tags_present": item.get("required_v2_tags_present"),
                 "imu_initialized": item.get("imu_initialized"),
@@ -172,12 +174,13 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",
         "",
-        "| Run | Pass | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | ORB FPS P50 | Input FPS P50 | Backlog OK | Img Buf Max | Invalid Pose Publishes |",
-        "| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |",
+        "| Run | Return | Pass | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | ORB FPS P50 | Input FPS P50 | Backlog OK | Img Buf Max | Invalid Pose Publishes |",
+        "| ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |",
     ]
     for index, item in enumerate(summaries, start=1):
         lines.append(
-            f"| {index} | {item.get('stability_pass')} | "
+            f"| {index} | {item.get('returncode')} | "
+            f"{item.get('stability_pass')} | "
             f"{item.get('required_v2_tags_present')} | "
             f"{item.get('imu_initialized')} | "
             f"{item.get('ok_ratio_after_init')} | "

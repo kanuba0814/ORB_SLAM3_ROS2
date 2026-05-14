@@ -320,6 +320,7 @@ def write_aggregate(
         "controlled_backlog_pass",
         "pose_publish_blocked_count",
         "invalid_pose_publish_count",
+        "runtime_error_count",
     ]
     with csv_path.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=fieldnames)
@@ -366,6 +367,7 @@ def write_aggregate(
                 "controlled_backlog_pass": item.get("controlled_backlog_pass"),
                 "pose_publish_blocked_count": item.get("pose_publish_blocked_count"),
                 "invalid_pose_publish_count": item.get("invalid_pose_publish_count"),
+                "runtime_error_count": item.get("runtime_error_count"),
             })
 
     lines = [
@@ -402,8 +404,8 @@ def write_aggregate(
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",
         "",
-        "| Run | Return | Pass | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | ORB FPS P50 | Input FPS P50 | Backlog OK | Img Buf Max | Invalid Pose Publishes |",
-        "| ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |",
+        "| Run | Return | Pass | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | ORB FPS P50 | Input FPS P50 | Backlog OK | Img Buf Max | Invalid Pose Publishes | Runtime Errors |",
+        "| ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
     ]
     for index, item in enumerate(summaries, start=1):
         lines.append(
@@ -422,7 +424,8 @@ def write_aggregate(
             f"{item.get('input_image_fps_est', {}).get('p50')} | "
             f"{item.get('controlled_backlog_pass')} | "
             f"{item.get('img_buf_size_max')} | "
-            f"{item.get('invalid_pose_publish_count')} |"
+            f"{item.get('invalid_pose_publish_count')} | "
+            f"{item.get('runtime_error_count')} |"
         )
     (output_dir / f"{label}.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
 

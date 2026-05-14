@@ -348,6 +348,12 @@ def require_run_stability_gates(run: dict[str, Any], index: int) -> None:
         run.get("invalid_pose_publish_count"),
         lambda value: int(value) == 0,
     )
+    require_metric_gate(
+        failures,
+        "runtime_error_count",
+        run.get("runtime_error_count"),
+        lambda value: int(value) == 0,
+    )
     if failures:
         raise ValueError(
             f"run {index} does not satisfy final stability gates: "
@@ -379,6 +385,9 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             raise ValueError(f"run {index} has stability_pass={run.get('stability_pass')}")
         if int(run.get("returncode", 1) or 0) != 0:
             raise ValueError(f"run {index} has returncode={run.get('returncode')}")
+        errors = run.get("errors")
+        if isinstance(errors, list) and errors:
+            raise ValueError(f"run {index} has runtime errors: {errors[:3]}")
         require_ros2_wrapper_command(run, index, aggregate, preflight)
         required_metrics = (
             "imu_initialized",
@@ -401,6 +410,7 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             "orb_processed_fps_est.p50",
             "pose_publish_blocked_count",
             "invalid_pose_publish_count",
+            "runtime_error_count",
         )
         missing = [name for name in required_metrics if metric(run, name) is None]
         if missing:
@@ -417,9 +427,9 @@ def render_metrics_table(runs: list[dict[str, Any]]) -> str:
         "Max lost streak s | Final KFs | Median inliers | Median MPs | "
         "IMU lag p50/p95 ms | Track p50/p95 ms | Image age p95 ms | "
         "Img buf max | Dropped images | ORB FPS p50 | Pose blocked | "
-        "Invalid pose publishes |",
+        "Invalid pose publishes | Runtime errors |",
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-        "---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for index, run in enumerate(runs, start=1):
         lines.append(
@@ -439,7 +449,8 @@ def render_metrics_table(runs: list[dict[str, Any]]) -> str:
             f"{run.get('dropped_img_count')} | "
             f"{metric(run, 'orb_processed_fps_est.p50')} | "
             f"{run.get('pose_publish_blocked_count')} | "
-            f"{run.get('invalid_pose_publish_count')} |"
+            f"{run.get('invalid_pose_publish_count')} | "
+            f"{run.get('runtime_error_count')} |"
         )
     return "\n".join(lines)
 

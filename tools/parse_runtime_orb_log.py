@@ -235,6 +235,7 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         "pose_publish_blocked_count": pose_publish_blocked_count,
         "invalid_pose_publish_count": invalid_pose_publish_count,
         "visual_quality_records": len(visual),
+        "runtime_error_count": len(errors),
     }
     image_to_last_imu_p95 = summary["image_to_last_imu_ms"]["p95"]
     required_v2_tags_present = all(
@@ -276,6 +277,7 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         and summary["img_buf_size_max"] <= 2
         and summary["controlled_backlog_pass"]
         and summary["invalid_pose_publish_count"] == 0
+        and summary["runtime_error_count"] == 0
     )
     return summary
 
@@ -310,6 +312,7 @@ def render_markdown(summary: dict[str, Any]) -> str:
         ("controlled_backlog_pass", summary["controlled_backlog_pass"]),
         ("pose_publish_blocked_count", summary["pose_publish_blocked_count"]),
         ("invalid_pose_publish_count", summary["invalid_pose_publish_count"]),
+        ("runtime_error_count", summary["runtime_error_count"]),
     ]
     lines = ["# Runtime ORB Log Summary", "", "| Metric | Value |", "| --- | --- |"]
     lines.extend(f"| `{key}` | `{value}` |" for key, value in rows)
@@ -348,6 +351,7 @@ def write_csv(summary: dict[str, Any], output: Path) -> None:
         "controlled_backlog_pass": summary["controlled_backlog_pass"],
         "pose_publish_blocked_count": summary["pose_publish_blocked_count"],
         "invalid_pose_publish_count": summary["invalid_pose_publish_count"],
+        "runtime_error_count": summary["runtime_error_count"],
     }
     with output.open("w", newline="", encoding="utf-8") as handle:
         writer = csv.DictWriter(handle, fieldnames=list(flat))

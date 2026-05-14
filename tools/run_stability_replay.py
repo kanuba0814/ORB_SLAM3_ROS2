@@ -49,9 +49,6 @@ def default_replay_topics(
     ordered_candidates = [
         image_topic,
         imu_topic,
-        "/sync/imu_batch",
-        "/imu/pipeline_ready",
-        "/rosout",
     ]
     replay_topics: list[str] = []
     for topic in ordered_candidates:

@@ -150,10 +150,7 @@ def generate_launch_description():
         DeclareLaunchArgument("start_offset", default_value="0.0"),
         DeclareLaunchArgument(
             "replay_topics",
-            default_value=(
-                "/sync/image_raw,/sync/imu,/sync/imu_batch,"
-                "/imu/pipeline_ready,/rosout"
-            ),
+            default_value="/sync/image_raw,/sync/imu",
             description="Comma-separated rosbag topics to play for sync-only replay.",
         ),
         DeclareLaunchArgument(

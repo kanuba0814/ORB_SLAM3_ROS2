@@ -219,9 +219,15 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         "visual_quality_records": len(visual),
     }
     image_to_last_imu_p95 = summary["image_to_last_imu_ms"]["p95"]
+    required_v2_tags_present = all(
+        summary["record_counts"].get(name, 0) > 0
+        for name in ("queue", "timing", "imu_window", "pose_gate", "visual_quality")
+    )
+    summary["required_v2_tags_present"] = required_v2_tags_present
 
     summary["stability_pass"] = bool(
         summary["imu_initialized"]
+        and summary["required_v2_tags_present"]
         and summary["reset_count_after_init"] == 0
         and summary["ok_ratio_after_init"] >= 0.90
         and summary["max_lost_streak_sec_after_init"] < 5.0
@@ -241,6 +247,7 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
 def render_markdown(summary: dict[str, Any]) -> str:
     rows = [
         ("stability_pass", summary["stability_pass"]),
+        ("required_v2_tags_present", summary["required_v2_tags_present"]),
         ("imu_initialized", summary["imu_initialized"]),
         ("ok_ratio_after_init", summary["ok_ratio_after_init"]),
         ("reset_count_after_init", summary["reset_count_after_init"]),
@@ -268,6 +275,7 @@ def write_csv(summary: dict[str, Any], output: Path) -> None:
     flat = {
         "log_path": summary["log_path"],
         "stability_pass": summary["stability_pass"],
+        "required_v2_tags_present": summary["required_v2_tags_present"],
         "imu_initialized": summary["imu_initialized"],
         "ok_ratio_after_init": summary["ok_ratio_after_init"],
         "reset_count_after_init": summary["reset_count_after_init"],

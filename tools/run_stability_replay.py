@@ -271,16 +271,16 @@ def write_aggregate(
     preflight: dict[str, Any] | None = None,
 ) -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
+    def is_run_passed(item: dict[str, Any]) -> bool:
+        return bool(item.get("stability_pass") and item.get("returncode") == 0)
+
     aggregate = {
         "label": label,
         "bag_path": str(bag_path),
         "preflight": preflight or {},
         "run_count": len(summaries),
-        "pass_count": sum(1 for item in summaries if item.get("stability_pass")),
-        "all_passed": bool(summaries) and all(
-            item.get("stability_pass") and item.get("returncode") == 0
-            for item in summaries
-        ),
+        "pass_count": sum(1 for item in summaries if is_run_passed(item)),
+        "all_passed": bool(summaries) and all(is_run_passed(item) for item in summaries),
         "runs": summaries,
     }
     (output_dir / f"{label}.json").write_text(

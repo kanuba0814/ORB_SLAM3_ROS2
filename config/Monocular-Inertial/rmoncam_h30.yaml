@@ -87,7 +87,7 @@ IMU.Frequency: 100.0        # Hz – H30 /sync/imu E-series calibration rate
 #--------------------------------------------------------------------------------------------
 
 # ORB Extractor: Number of features per image
-ORBextractor.nFeatures: 250
+ORBextractor.nFeatures: 1200
 
 # ORB Extractor: Scale factor between levels in the scale pyramid
 ORBextractor.scaleFactor: 1.2

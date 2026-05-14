@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import os
+import sqlite3
 import subprocess
 import sys
 import time
@@ -23,6 +24,16 @@ DEFAULT_LATEST_FILES = (
     WORKSPACE / "bags" / "LATEST_BAG.txt",
     WORKSPACE / "bags" / "goalDebug" / "LATEST_BAG.txt",
 )
+ALLOWED_REPLAY_TOPICS = {
+    "/sync/image_raw",
+    "/sync/imu",
+    "/sync/imu_batch",
+    "/imu/pipeline_ready",
+    "/rosout",
+}
+ALLOWED_IMAGE_TOPICS = {"/sync/image_raw"}
+ALLOWED_IMU_TOPICS = {"/sync/imu", "/sync/imu_batch"}
+BANNED_SELECTED_TOPICS = {"/image_raw", "/imu/data_raw", "/imu/raw_hw"}
 
 
 def read_latest_bag(explicit_bag: str | None, latest_file: Path | None) -> Path:
@@ -66,6 +77,53 @@ def launch_command(args: argparse.Namespace, bag_path: Path) -> list[str]:
         f"duration:={args.duration}",
         f"qos_profile_overrides_path:={args.qos_profile_overrides_path}",
     ]
+
+
+def read_bag_topics(bag_path: Path) -> set[str]:
+    db_files = sorted(bag_path.glob("*.db3"))
+    if not db_files:
+        raise FileNotFoundError(f"no rosbag2 sqlite .db3 files found under {bag_path}")
+    topics: set[str] = set()
+    for db_file in db_files:
+        with sqlite3.connect(db_file) as connection:
+            for (name,) in connection.execute("select name from topics"):
+                topics.add(str(name))
+    return topics
+
+
+def preflight_replay(args: argparse.Namespace, bag_path: Path) -> None:
+    if not bag_path.exists():
+        raise FileNotFoundError(f"bag path does not exist: {bag_path}")
+    if not bag_path.is_dir():
+        raise NotADirectoryError(f"bag path is not a directory: {bag_path}")
+
+    topics = read_bag_topics(bag_path)
+    selected_topics = {args.image_topic, args.imu_topic}
+    banned_selected = selected_topics & BANNED_SELECTED_TOPICS
+    if banned_selected:
+        raise ValueError(f"selected forbidden replay topics: {sorted(banned_selected)}")
+    if args.image_topic not in ALLOWED_IMAGE_TOPICS:
+        raise ValueError(f"image topic must be one of {sorted(ALLOWED_IMAGE_TOPICS)}")
+    if args.imu_topic not in ALLOWED_IMU_TOPICS:
+        raise ValueError(f"IMU topic must be one of {sorted(ALLOWED_IMU_TOPICS)}")
+
+    missing = sorted(topic for topic in selected_topics if topic not in topics)
+    if missing:
+        raise ValueError(f"selected replay topics are missing from bag: {missing}")
+
+    settings_file = Path(args.settings_file).expanduser()
+    if not settings_file.exists():
+        raise FileNotFoundError(f"settings file does not exist: {settings_file}")
+    qos_path = Path(args.qos_profile_overrides_path).expanduser()
+    if args.qos_profile_overrides_path and not qos_path.exists():
+        raise FileNotFoundError(f"QoS override file does not exist: {qos_path}")
+
+    ignored = sorted(topic for topic in topics if topic not in ALLOWED_REPLAY_TOPICS)
+    if ignored:
+        print(
+            "preflight: ignoring non-replay bag topics: " + ", ".join(ignored),
+            file=sys.stderr,
+        )
 
 
 def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]], output_dir: Path) -> None:
@@ -239,12 +297,26 @@ def main() -> int:
         "--qos-profile-overrides-path",
         default=str(PACKAGE_ROOT / "config" / "bag_qos_override.yaml"),
     )
+    parser.add_argument("--preflight", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument(
+        "--preflight-only",
+        action="store_true",
+        help="Run local bag/topic/settings checks and exit before launching ROS.",
+    )
     parser.add_argument("--timeout-sec", type=float, default=0.0)
     args = parser.parse_args()
     if args.runs < 1:
         parser.error("--runs must be at least 1")
 
     bag_path = read_latest_bag(args.bag_path, args.latest_file)
+    if args.preflight:
+        try:
+            preflight_replay(args, bag_path)
+        except Exception as exc:
+            parser.error(f"preflight failed: {exc}")
+    if args.preflight_only:
+        print(f"preflight passed for {bag_path}")
+        return 0
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summaries: list[dict[str, Any]] = []
 

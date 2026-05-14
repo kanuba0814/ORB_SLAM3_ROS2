@@ -1,4 +1,3 @@
-#include <geometry_msgs/msg/detail/transform_stamped__struct.hpp>
 #include <pcl/PCLPointCloud2.h>
 #include <pcl/cloud_iterator.h>
 #include <pcl/common/centroid.h>
@@ -15,6 +14,7 @@
 
 #include <geometry_msgs/msg/pose_array.hpp>
 #include <geometry_msgs/msg/quaternion.hpp>
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <geometry_msgs/msg/vector3.hpp>
 #include <nav_msgs/msg/occupancy_grid.hpp>
 #include <nav_msgs/msg/odometry.hpp>

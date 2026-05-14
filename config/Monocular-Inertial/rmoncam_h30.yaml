@@ -77,6 +77,10 @@ IMU.InsertKFsWhenLost: 0
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
 
+# Low-motion replay may not reach inertial BA2 before short visual drops.
+# Keep the active map and let RECENTLY_LOST recovery run instead of deleting it.
+Tracking.ResetActiveMapBeforeInertialBA2: 0
+
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.
 # 10x is standard for non-lab deployment; tune down if init is too slow.

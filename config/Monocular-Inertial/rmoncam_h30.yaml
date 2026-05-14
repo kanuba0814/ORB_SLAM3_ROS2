@@ -79,9 +79,6 @@ LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
 # Keep the post-relocalization IMU reset/recovery window independent from the
 # observed 9Hz bag cadence; 90 frames is about 10 seconds on this replay.
 Tracking.FramesToResetIMU: 90
-# With the longer recovery window, let pre-BA2 recent-lost recovery handle
-# isolated low-inlier frames instead of clearing the active map immediately.
-Tracking.ResetActiveMapBeforeInertialBA2: 0
 
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.

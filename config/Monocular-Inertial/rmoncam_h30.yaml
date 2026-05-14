@@ -73,6 +73,10 @@ IMU.T_b_c1: !!opencv-matrix
 # Do not insert KFs when recently lost (helps with IMU-only tracking)
 IMU.InsertKFsWhenLost: 0
 
+# The fixed H30 sync bag has very small inter-keyframe translation after scale
+# estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
+LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
+
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.
 # 10x is standard for non-lab deployment; tune down if init is too slow.

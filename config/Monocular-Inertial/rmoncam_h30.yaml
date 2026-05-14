@@ -76,6 +76,9 @@ IMU.InsertKFsWhenLost: 0
 # The fixed H30 sync bag has very small inter-keyframe translation after scale
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
+# Keep the post-relocalization IMU reset/recovery window independent from the
+# observed 9Hz bag cadence; 90 frames is about 10 seconds on this replay.
+Tracking.FramesToResetIMU: 90
 
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.

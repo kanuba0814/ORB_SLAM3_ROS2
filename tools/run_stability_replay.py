@@ -76,6 +76,7 @@ def launch_command(args: argparse.Namespace, bag_path: Path) -> list[str]:
         f"use_pangolin:={str(args.use_pangolin).lower()}",
         f"rate:={args.rate}",
         f"duration:={args.duration}",
+        f"play_delay:={args.play_delay}",
         f"qos_profile_overrides_path:={args.qos_profile_overrides_path}",
     ]
 
@@ -140,6 +141,34 @@ def read_topic_stats(bag_path: Path, topic_name: str) -> dict[str, Any]:
     }
 
 
+def read_bag_time_span_sec(bag_path: Path) -> float | None:
+    first_ns: int | None = None
+    last_ns: int | None = None
+    for db_file in sorted(bag_path.glob("*.db3")):
+        with sqlite3.connect(db_file) as connection:
+            row = connection.execute(
+                "select min(timestamp), max(timestamp) from messages"
+            ).fetchone()
+            if not row:
+                continue
+            min_timestamp, max_timestamp = row
+            if min_timestamp is not None:
+                first_ns = (
+                    int(min_timestamp)
+                    if first_ns is None
+                    else min(first_ns, int(min_timestamp))
+                )
+            if max_timestamp is not None:
+                last_ns = (
+                    int(max_timestamp)
+                    if last_ns is None
+                    else max(last_ns, int(max_timestamp))
+                )
+    if first_ns is None or last_ns is None or last_ns <= first_ns:
+        return None
+    return (last_ns - first_ns) / 1_000_000_000.0
+
+
 def read_camera_fps(settings_file: Path) -> float | None:
     pattern = re.compile(r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$")
     for line in settings_file.read_text(encoding="utf-8").splitlines():
@@ -179,6 +208,33 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
     if args.qos_profile_overrides_path and not qos_path.exists():
         raise FileNotFoundError(f"QoS override file does not exist: {qos_path}")
 
+    try:
+        rate = max(float(args.rate), 1e-6)
+        requested_duration_sec = float(args.duration)
+        play_delay_sec = max(float(args.play_delay), 0.0)
+        timeout_sec = float(args.timeout_sec)
+    except ValueError as exc:
+        raise ValueError(f"invalid replay timing argument: {exc}") from exc
+    bag_time_span_sec = read_bag_time_span_sec(bag_path)
+    replay_duration_sec = (
+        requested_duration_sec
+        if requested_duration_sec > 0.0
+        else bag_time_span_sec
+    )
+    required_timeout_sec = None
+    if replay_duration_sec is not None:
+        required_timeout_sec = play_delay_sec + (replay_duration_sec / rate) + 15.0
+    if (
+        timeout_sec > 0.0
+        and required_timeout_sec is not None
+        and timeout_sec < required_timeout_sec
+    ):
+        raise ValueError(
+            "timeout too low for replay: "
+            f"timeout_sec={timeout_sec:.3f}, "
+            f"required_timeout_sec>={required_timeout_sec:.3f}"
+        )
+
     ignored = sorted(topic for topic in topics if topic not in ALLOWED_REPLAY_TOPICS)
     if ignored:
         print(
@@ -193,6 +249,12 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
             "imu": args.imu_topic,
         },
         "image_topic_stats": read_topic_stats(bag_path, args.image_topic),
+        "bag_time_span_sec": bag_time_span_sec,
+        "replay_duration_sec": replay_duration_sec,
+        "required_timeout_sec": required_timeout_sec,
+        "timeout_sec": timeout_sec,
+        "rate": rate,
+        "play_delay_sec": play_delay_sec,
         "settings_camera_fps": settings_camera_fps,
         "settings_file": str(settings_file),
         "qos_profile_overrides_path": (
@@ -320,6 +382,12 @@ def write_aggregate(
         f"`{(preflight or {}).get('image_topic_stats', {}).get('fps_span')}`",
         "- settings_camera_fps: "
         f"`{(preflight or {}).get('settings_camera_fps')}`",
+        "- bag_time_span_sec: "
+        f"`{(preflight or {}).get('bag_time_span_sec')}`",
+        "- required_timeout_sec: "
+        f"`{(preflight or {}).get('required_timeout_sec')}`",
+        "- timeout_sec: "
+        f"`{(preflight or {}).get('timeout_sec')}`",
         f"- run_count: `{len(summaries)}`",
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",
@@ -385,6 +453,7 @@ def main() -> int:
     parser.add_argument("--use-pangolin", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--rate", default="1.0")
     parser.add_argument("--duration", default="0.0")
+    parser.add_argument("--play-delay", default="2.0")
     parser.add_argument(
         "--qos-profile-overrides-path",
         default=str(PACKAGE_ROOT / "config" / "bag_qos_override.yaml"),

@@ -76,6 +76,9 @@ IMU.InsertKFsWhenLost: 0
 # The fixed H30 sync bag has very small inter-keyframe translation after scale
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
+# The fixed H30 bag repeatedly accepts 0.1-0.4 scale IMU init attempts that
+# immediately collapse; reject those and wait for a more credible scale.
+LocalMapping.MinInitialScale: 0.5
 
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.

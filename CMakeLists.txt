@@ -221,6 +221,7 @@ install(
 
 install(
   PROGRAMS
+    tools/generate_final_stability_artifacts.py
     tools/parse_runtime_orb_log.py
     tools/run_stability_replay.py
   DESTINATION lib/${PROJECT_NAME}

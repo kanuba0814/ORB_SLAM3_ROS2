@@ -673,6 +673,7 @@ private:
   {
     if (!debug_enable_ || !debug_runtime_metrics_) return;
 
+    std::lock_guard<std::mutex> queue_lock(debug_queue_mutex_);
     int64_t now = steady_now_ns();
     if (debug_last_queue_ns_ != 0 &&
         now - debug_last_queue_ns_ < 1'000'000'000LL) {
@@ -858,12 +859,15 @@ private:
     const double velocity_z =
       nan_if_unavailable(state.has_velocity, state.velocity.z());
 
-    if (state.has_pose && !debug_pose_baseline_set_) {
-      debug_pose_baseline_set_ = true;
-      debug_pose_base_t_ = state.pose;
-    }
-    if (state.has_pose) {
-      debug_last_pose_drift_m_ = (state.pose - debug_pose_base_t_).norm();
+    {
+      std::lock_guard<std::mutex> pose_lock(debug_pose_mutex_);
+      if (state.has_pose && !debug_pose_baseline_set_) {
+        debug_pose_baseline_set_ = true;
+        debug_pose_base_t_ = state.pose;
+      }
+      if (state.has_pose) {
+        debug_last_pose_drift_m_ = (state.pose - debug_pose_base_t_).norm();
+      }
     }
 
     for (const auto &event : events) {
@@ -954,13 +958,20 @@ private:
     double yaw = tf2::getYaw(tf2::Quaternion(
       Twc.unit_quaternion().x(), Twc.unit_quaternion().y(),
       Twc.unit_quaternion().z(), Twc.unit_quaternion().w()));
-    if (!debug_pose_baseline_set_) {
-      debug_pose_baseline_set_ = true;
-      debug_pose_base_t_ = t;
-      debug_pose_base_yaw_ = yaw;
+    double drift_translation_m = 0.0;
+    double drift_yaw_rad = 0.0;
+    {
+      std::lock_guard<std::mutex> pose_lock(debug_pose_mutex_);
+      if (!debug_pose_baseline_set_) {
+        debug_pose_baseline_set_ = true;
+        debug_pose_base_t_ = t;
+        debug_pose_base_yaw_ = yaw;
+      }
+      debug_last_pose_drift_m_ = (t - debug_pose_base_t_).norm();
+      debug_last_pose_yaw_drift_rad_ = yaw - debug_pose_base_yaw_;
+      drift_translation_m = debug_last_pose_drift_m_;
+      drift_yaw_rad = debug_last_pose_yaw_drift_rad_;
     }
-    debug_last_pose_drift_m_ = (t - debug_pose_base_t_).norm();
-    debug_last_pose_yaw_drift_rad_ = yaw - debug_pose_base_yaw_;
     std::lock_guard<std::mutex> lock(debug_mutex_);
     RCLCPP_INFO(
       get_logger(),
@@ -970,7 +981,7 @@ private:
       debug_pose_count_++, steady_now_ns(), t.x(), t.y(), t.z(),
       Twc.unit_quaternion().x(), Twc.unit_quaternion().y(),
       Twc.unit_quaternion().z(), Twc.unit_quaternion().w(),
-      debug_last_pose_drift_m_, debug_last_pose_yaw_drift_rad_);
+      drift_translation_m, drift_yaw_rad);
   }
 
   void write_debug_summary_1hz()
@@ -1416,6 +1427,8 @@ private:
   double observed_imu_rate_hz_{0.0};
   bool imu_yaml_warned_{false};
   std::mutex debug_mutex_;
+  std::mutex debug_queue_mutex_;
+  std::mutex debug_pose_mutex_;
   std::atomic<uint64_t> debug_orb_frame_count_{0};
   uint64_t debug_last_summary_frame_count_{0};
   uint64_t debug_pose_count_{0};

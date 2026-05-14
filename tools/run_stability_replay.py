@@ -7,6 +7,7 @@ import argparse
 import csv
 import json
 import os
+import re
 import sqlite3
 import subprocess
 import sys
@@ -91,6 +92,63 @@ def read_bag_topics(bag_path: Path) -> set[str]:
     return topics
 
 
+def read_topic_stats(bag_path: Path, topic_name: str) -> dict[str, Any]:
+    total_count = 0
+    first_ns: int | None = None
+    last_ns: int | None = None
+    for db_file in sorted(bag_path.glob("*.db3")):
+        with sqlite3.connect(db_file) as connection:
+            topic_rows = list(
+                connection.execute("select id from topics where name = ?", (topic_name,))
+            )
+            for (topic_id,) in topic_rows:
+                row = connection.execute(
+                    "select count(*), min(timestamp), max(timestamp) "
+                    "from messages where topic_id = ?",
+                    (topic_id,),
+                ).fetchone()
+                if not row:
+                    continue
+                count, min_timestamp, max_timestamp = row
+                total_count += int(count or 0)
+                if min_timestamp is not None:
+                    first_ns = (
+                        int(min_timestamp)
+                        if first_ns is None
+                        else min(first_ns, int(min_timestamp))
+                    )
+                if max_timestamp is not None:
+                    last_ns = (
+                        int(max_timestamp)
+                        if last_ns is None
+                        else max(last_ns, int(max_timestamp))
+                    )
+    fps_span = None
+    if (
+        total_count > 1
+        and first_ns is not None
+        and last_ns is not None
+        and last_ns > first_ns
+    ):
+        fps_span = (total_count - 1) * 1_000_000_000.0 / (last_ns - first_ns)
+    return {
+        "topic": topic_name,
+        "count": total_count,
+        "first_ns": first_ns,
+        "last_ns": last_ns,
+        "fps_span": fps_span,
+    }
+
+
+def read_camera_fps(settings_file: Path) -> float | None:
+    pattern = re.compile(r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$")
+    for line in settings_file.read_text(encoding="utf-8").splitlines():
+        match = pattern.match(line)
+        if match:
+            return float(match.group(1))
+    return None
+
+
 def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]:
     if not bag_path.exists():
         raise FileNotFoundError(f"bag path does not exist: {bag_path}")
@@ -114,6 +172,9 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
     settings_file = Path(args.settings_file).expanduser()
     if not settings_file.exists():
         raise FileNotFoundError(f"settings file does not exist: {settings_file}")
+    settings_camera_fps = read_camera_fps(settings_file)
+    if settings_camera_fps is None:
+        raise ValueError(f"settings file is missing Camera.fps: {settings_file}")
     qos_path = Path(args.qos_profile_overrides_path).expanduser()
     if args.qos_profile_overrides_path and not qos_path.exists():
         raise FileNotFoundError(f"QoS override file does not exist: {qos_path}")
@@ -131,6 +192,8 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
             "image": args.image_topic,
             "imu": args.imu_topic,
         },
+        "image_topic_stats": read_topic_stats(bag_path, args.image_topic),
+        "settings_camera_fps": settings_camera_fps,
         "settings_file": str(settings_file),
         "qos_profile_overrides_path": (
             str(qos_path) if args.qos_profile_overrides_path else ""
@@ -253,6 +316,10 @@ def write_aggregate(
         f"`{(preflight or {}).get('selected_topics', {}).get('imu')}`",
         "- ignored_bag_topics: "
         f"`{', '.join((preflight or {}).get('ignored_bag_topics', []))}`",
+        "- image_topic_fps_span: "
+        f"`{(preflight or {}).get('image_topic_stats', {}).get('fps_span')}`",
+        "- settings_camera_fps: "
+        f"`{(preflight or {}).get('settings_camera_fps')}`",
         f"- run_count: `{len(summaries)}`",
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",

@@ -57,6 +57,14 @@ def default_replay_topics(
     return replay_topics
 
 
+def selected_topic_defaults(image_topic: str, imu_topic: str) -> list[str]:
+    topics: list[str] = []
+    for topic in (image_topic, imu_topic):
+        if topic and topic not in topics:
+            topics.append(topic)
+    return topics
+
+
 def read_latest_bag(explicit_bag: str | None, latest_file: Path | None) -> Path:
     if explicit_bag:
         return Path(explicit_bag).expanduser().resolve()
@@ -550,8 +558,16 @@ def main() -> int:
             preflight_info = preflight_replay(args, bag_path)
         except Exception as exc:
             parser.error(f"preflight failed: {exc}")
+    elif not args.replay_topics:
+        args.replay_topics = ",".join(
+            selected_topic_defaults(args.image_topic, args.imu_topic)
+        )
     if args.preflight_only:
+        replay_topics = args.replay_topics or ",".join(
+            selected_topic_defaults(args.image_topic, args.imu_topic)
+        )
         print(f"preflight passed for {bag_path}")
+        print(f"replay_topics: {replay_topics}")
         return 0
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summaries: list[dict[str, Any]] = []

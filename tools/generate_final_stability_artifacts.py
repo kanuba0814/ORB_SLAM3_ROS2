@@ -19,6 +19,12 @@ DEFAULT_OUTPUT_DIR = EXTRA_WS / "debug_runs" / "fix_until_stable"
 DEFAULT_SETTINGS = PACKAGE_ROOT / "config" / "Monocular-Inertial" / "rmoncam_h30.yaml"
 ALLOWED_IMAGE_TOPIC = "/sync/image_raw"
 ALLOWED_IMU_TOPICS = {"/sync/imu", "/sync/imu_batch"}
+ALLOWED_REPLAY_TOPICS = {
+    ALLOWED_IMAGE_TOPIC,
+    *ALLOWED_IMU_TOPICS,
+    "/imu/pipeline_ready",
+    "/rosout",
+}
 BANNED_SELECTED_TOPICS = {"/image_raw", "/imu/data_raw", "/imu/raw_hw"}
 CAMERA_FPS_RE = re.compile(
     r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
@@ -101,6 +107,31 @@ def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
     if imu_topic not in ALLOWED_IMU_TOPICS:
         raise ValueError(
             f"preflight IMU topic must be one of {sorted(ALLOWED_IMU_TOPICS)}"
+        )
+    replay_topics = preflight.get("replay_topics")
+    if not isinstance(replay_topics, list) or not replay_topics:
+        raise ValueError("preflight is missing replay_topics")
+    replay_topic_set = {str(topic) for topic in replay_topics}
+    banned_replay = sorted(replay_topic_set & BANNED_SELECTED_TOPICS)
+    if banned_replay:
+        raise ValueError(
+            f"preflight replay topics include forbidden topics: {banned_replay}"
+        )
+    unsupported_replay = sorted(
+        topic for topic in replay_topic_set
+        if topic not in ALLOWED_REPLAY_TOPICS
+    )
+    if unsupported_replay:
+        raise ValueError(
+            f"preflight replay topics are not sync-only allowed topics: {unsupported_replay}"
+        )
+    missing_selected_replay = sorted(
+        topic for topic in selected if topic not in replay_topic_set
+    )
+    if missing_selected_replay:
+        raise ValueError(
+            "preflight replay topics do not include selected ORB topics: "
+            f"{missing_selected_replay}"
         )
 
     image_topic_stats = preflight.get("image_topic_stats")
@@ -230,6 +261,8 @@ def require_ros2_wrapper_command(
     )
     require_command_float_argument(command_parts, "rate", preflight.get("rate"), missing)
     require_command_float_argument(command_parts, "duration", "0.0", missing)
+    replay_topics = ",".join(str(topic) for topic in preflight.get("replay_topics", []))
+    require_command_argument(command_parts, "replay_topics", replay_topics, missing)
     require_command_float_argument(
         command_parts,
         "play_delay",
@@ -512,6 +545,7 @@ def render_report(
         f"`{preflight.get('selected_topics', {}).get('imu')}`",
         f"- settings_camera_fps: `{preflight.get('settings_camera_fps')}`",
         f"- settings_file: `{preflight.get('settings_file')}`",
+        f"- replay_topics: `{', '.join(preflight.get('replay_topics', []))}`",
         "- image_topic_fps_span: "
         f"`{preflight.get('image_topic_stats', {}).get('fps_span')}`",
         f"- timeout_sec: `{preflight.get('timeout_sec')}`",

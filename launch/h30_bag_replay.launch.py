@@ -34,8 +34,14 @@ def _bag_actions(context, *args, **kwargs):
     start_offset = LaunchConfiguration("start_offset").perform(context)
     duration = LaunchConfiguration("duration").perform(context)
     play_delay = LaunchConfiguration("play_delay").perform(context)
+    replay_topics_value = LaunchConfiguration("replay_topics").perform(context)
     qos_profile_overrides_path = LaunchConfiguration(
         "qos_profile_overrides_path").perform(context)
+    replay_topics = [
+        topic.strip()
+        for topic in replay_topics_value.split(",")
+        if topic.strip()
+    ]
 
     cmd = [
         "ros2",
@@ -48,6 +54,8 @@ def _bag_actions(context, *args, **kwargs):
         "--start-offset",
         start_offset,
     ]
+    if replay_topics:
+        cmd.extend(["--topics", *replay_topics])
     if qos_profile_overrides_path:
         cmd.extend([
             "--qos-profile-overrides-path",
@@ -140,6 +148,14 @@ def generate_launch_description():
         DeclareLaunchArgument("use_pangolin", default_value="false"),
         DeclareLaunchArgument("rate", default_value="1.0"),
         DeclareLaunchArgument("start_offset", default_value="0.0"),
+        DeclareLaunchArgument(
+            "replay_topics",
+            default_value=(
+                "/sync/image_raw,/sync/imu,/sync/imu_batch,"
+                "/imu/pipeline_ready,/rosout"
+            ),
+            description="Comma-separated rosbag topics to play for sync-only replay.",
+        ),
         DeclareLaunchArgument(
             "play_delay",
             default_value="2.0",

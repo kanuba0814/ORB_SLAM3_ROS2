@@ -37,6 +37,29 @@ ALLOWED_IMU_TOPICS = {"/sync/imu", "/sync/imu_batch"}
 BANNED_SELECTED_TOPICS = {"/image_raw", "/imu/data_raw", "/imu/raw_hw"}
 
 
+def parse_topic_csv(value: str) -> list[str]:
+    return [topic.strip() for topic in value.split(",") if topic.strip()]
+
+
+def default_replay_topics(
+    bag_topics: set[str],
+    image_topic: str,
+    imu_topic: str,
+) -> list[str]:
+    ordered_candidates = [
+        image_topic,
+        imu_topic,
+        "/sync/imu_batch",
+        "/imu/pipeline_ready",
+        "/rosout",
+    ]
+    replay_topics: list[str] = []
+    for topic in ordered_candidates:
+        if topic in bag_topics and topic not in replay_topics:
+            replay_topics.append(topic)
+    return replay_topics
+
+
 def read_latest_bag(explicit_bag: str | None, latest_file: Path | None) -> Path:
     if explicit_bag:
         return Path(explicit_bag).expanduser().resolve()
@@ -76,6 +99,7 @@ def launch_command(args: argparse.Namespace, bag_path: Path) -> list[str]:
         f"use_pangolin:={str(args.use_pangolin).lower()}",
         f"rate:={args.rate}",
         f"duration:={args.duration}",
+        f"replay_topics:={args.replay_topics}",
         f"play_delay:={args.play_delay}",
         f"qos_profile_overrides_path:={args.qos_profile_overrides_path}",
     ]
@@ -198,6 +222,35 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
     if missing:
         raise ValueError(f"selected replay topics are missing from bag: {missing}")
 
+    replay_topics = (
+        parse_topic_csv(args.replay_topics)
+        if args.replay_topics
+        else default_replay_topics(topics, args.image_topic, args.imu_topic)
+    )
+    if not replay_topics:
+        raise ValueError("no replay topics selected")
+    banned_replay = sorted(set(replay_topics) & BANNED_SELECTED_TOPICS)
+    if banned_replay:
+        raise ValueError(f"replay topics include forbidden topics: {banned_replay}")
+    unsupported_replay = sorted(
+        topic for topic in replay_topics if topic not in ALLOWED_REPLAY_TOPICS
+    )
+    if unsupported_replay:
+        raise ValueError(
+            f"replay topics must be allowed sync-only topics: {unsupported_replay}"
+        )
+    missing_selected_replay = sorted(
+        topic for topic in selected_topics if topic not in replay_topics
+    )
+    if missing_selected_replay:
+        raise ValueError(
+            f"replay topics do not include selected ORB topics: {missing_selected_replay}"
+        )
+    missing_replay = sorted(topic for topic in replay_topics if topic not in topics)
+    if missing_replay:
+        raise ValueError(f"replay topics are missing from bag: {missing_replay}")
+    args.replay_topics = ",".join(replay_topics)
+
     settings_file = Path(args.settings_file).expanduser()
     if not settings_file.exists():
         raise FileNotFoundError(f"settings file does not exist: {settings_file}")
@@ -244,6 +297,7 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
     return {
         "bag_topics": sorted(topics),
         "ignored_bag_topics": ignored,
+        "replay_topics": replay_topics,
         "selected_topics": {
             "image": args.image_topic,
             "imu": args.imu_topic,
@@ -380,6 +434,8 @@ def write_aggregate(
         f"`{(preflight or {}).get('selected_topics', {}).get('imu')}`",
         "- ignored_bag_topics: "
         f"`{', '.join((preflight or {}).get('ignored_bag_topics', []))}`",
+        "- replay_topics: "
+        f"`{', '.join((preflight or {}).get('replay_topics', []))}`",
         "- image_topic_fps_span: "
         f"`{(preflight or {}).get('image_topic_stats', {}).get('fps_span')}`",
         "- settings_camera_fps: "
@@ -466,6 +522,14 @@ def main() -> int:
     parser.add_argument("--use-pangolin", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--rate", default="1.0")
     parser.add_argument("--duration", default="0.0")
+    parser.add_argument(
+        "--replay-topics",
+        default="",
+        help=(
+            "Comma-separated topics passed to ros2 bag play --topics. "
+            "Defaults to present sync-only topics from the bag."
+        ),
+    )
     parser.add_argument("--play-delay", default="2.0")
     parser.add_argument(
         "--qos-profile-overrides-path",

@@ -16,6 +16,9 @@ EXTRA_WS = WORKSPACE / "extra_ws"
 PACKAGE_ROOT = EXTRA_WS / "src" / "ORB_SLAM3_ROS2"
 DEFAULT_OUTPUT_DIR = EXTRA_WS / "debug_runs" / "fix_until_stable"
 DEFAULT_SETTINGS = PACKAGE_ROOT / "config" / "Monocular-Inertial" / "rmoncam_h30.yaml"
+ALLOWED_IMAGE_TOPIC = "/sync/image_raw"
+ALLOWED_IMU_TOPICS = {"/sync/imu", "/sync/imu_batch"}
+BANNED_SELECTED_TOPICS = {"/image_raw", "/imu/data_raw", "/imu/raw_hw"}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -33,6 +36,96 @@ def metric(run: dict[str, Any], dotted_key: str) -> Any:
             return None
         value = value.get(key)
     return value
+
+
+def require_float(preflight: dict[str, Any], key: str) -> float:
+    value = preflight.get(key)
+    if value is None:
+        raise ValueError(f"preflight is missing {key}")
+    try:
+        return float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"preflight {key} is not numeric: {value}") from exc
+
+
+def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
+    preflight = aggregate.get("preflight")
+    if not isinstance(preflight, dict) or not preflight:
+        raise ValueError("aggregate is missing replay preflight metadata")
+
+    selected_topics = preflight.get("selected_topics")
+    if not isinstance(selected_topics, dict):
+        raise ValueError("preflight is missing selected_topics")
+    image_topic = selected_topics.get("image")
+    imu_topic = selected_topics.get("imu")
+    selected = {str(topic) for topic in (image_topic, imu_topic) if topic}
+    banned = sorted(selected & BANNED_SELECTED_TOPICS)
+    if banned:
+        raise ValueError(f"preflight selected forbidden replay topics: {banned}")
+    if image_topic != ALLOWED_IMAGE_TOPIC:
+        raise ValueError(
+            f"preflight image topic must be {ALLOWED_IMAGE_TOPIC}, got {image_topic}"
+        )
+    if imu_topic not in ALLOWED_IMU_TOPICS:
+        raise ValueError(
+            f"preflight IMU topic must be one of {sorted(ALLOWED_IMU_TOPICS)}"
+        )
+
+    image_topic_stats = preflight.get("image_topic_stats")
+    if not isinstance(image_topic_stats, dict):
+        raise ValueError("preflight is missing image_topic_stats")
+    if int(image_topic_stats.get("count") or 0) <= 0:
+        raise ValueError("preflight image topic has no recorded messages")
+    if image_topic_stats.get("fps_span") is None:
+        raise ValueError("preflight image topic is missing fps_span")
+
+    required_paths = ("settings_file", "qos_profile_overrides_path")
+    for key in required_paths:
+        if not isinstance(preflight.get(key), str) or not preflight.get(key):
+            raise ValueError(f"preflight is missing {key}")
+    if preflight.get("settings_camera_fps") is None:
+        raise ValueError("preflight is missing settings_camera_fps")
+
+    required_timeout_sec = require_float(preflight, "required_timeout_sec")
+    timeout_sec = require_float(preflight, "timeout_sec")
+    for key in ("bag_time_span_sec", "replay_duration_sec", "rate", "play_delay_sec"):
+        require_float(preflight, key)
+    if timeout_sec <= 0.0:
+        raise ValueError("preflight timeout_sec must be positive for final replay evidence")
+    if timeout_sec < required_timeout_sec:
+        raise ValueError(
+            "preflight timeout_sec is too low for final replay evidence: "
+            f"timeout_sec={timeout_sec}, required_timeout_sec={required_timeout_sec}"
+        )
+
+    return preflight
+
+
+def require_ros2_wrapper_command(run: dict[str, Any], index: int) -> None:
+    command = run.get("command")
+    if not isinstance(command, list):
+        raise ValueError(f"run {index} is missing replay command list")
+    command_text = " ".join(str(part) for part in command)
+    required_parts = (
+        "ros2",
+        "launch",
+        "orb_slam3_ros2",
+        "h30_bag_replay.launch.py",
+        f"image_topic:={ALLOWED_IMAGE_TOPIC}",
+    )
+    missing = [part for part in required_parts if part not in command_text]
+    if not any(f"imu_topic:={topic}" in command_text for topic in ALLOWED_IMU_TOPICS):
+        missing.append("imu_topic:=/sync/imu or imu_topic:=/sync/imu_batch")
+    if missing:
+        raise ValueError(
+            f"run {index} command is not the guarded ROS2 wrapper replay path; "
+            f"missing: {', '.join(missing)}"
+        )
+    if any(
+        f"image_topic:={topic}" in command_text or f"imu_topic:={topic}" in command_text
+        for topic in BANNED_SELECTED_TOPICS
+    ):
+        raise ValueError(f"run {index} command references forbidden replay topics")
 
 
 def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[dict[str, Any]]:
@@ -56,6 +149,7 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             raise ValueError(f"run {index} has stability_pass={run.get('stability_pass')}")
         if int(run.get("returncode", 1) or 0) != 0:
             raise ValueError(f"run {index} has returncode={run.get('returncode')}")
+        require_ros2_wrapper_command(run, index)
         if not run.get("controlled_backlog_pass"):
             raise ValueError(
                 f"run {index} has controlled_backlog_pass="
@@ -144,6 +238,7 @@ def render_report(
 ) -> str:
     bag_path = aggregate.get("bag_path")
     label = aggregate.get("label")
+    preflight = aggregate.get("preflight", {})
     table = render_metrics_table(runs)
     first_command = runs[0].get("command") if runs else None
     if isinstance(first_command, list):
@@ -165,6 +260,16 @@ def render_report(
         f"- run_count: `{aggregate.get('run_count')}`",
         f"- pass_count: `{aggregate.get('pass_count')}`",
         f"- all_passed: `{aggregate.get('all_passed')}`",
+        "- selected_image_topic: "
+        f"`{preflight.get('selected_topics', {}).get('image')}`",
+        "- selected_imu_topic: "
+        f"`{preflight.get('selected_topics', {}).get('imu')}`",
+        f"- settings_camera_fps: `{preflight.get('settings_camera_fps')}`",
+        f"- settings_file: `{preflight.get('settings_file')}`",
+        "- image_topic_fps_span: "
+        f"`{preflight.get('image_topic_stats', {}).get('fps_span')}`",
+        f"- timeout_sec: `{preflight.get('timeout_sec')}`",
+        f"- required_timeout_sec: `{preflight.get('required_timeout_sec')}`",
         "",
         "## Launch Command",
         "",
@@ -248,6 +353,7 @@ def main() -> int:
     args = parser.parse_args()
 
     aggregate = load_json(args.aggregate_json)
+    require_final_replay_preflight(aggregate)
     runs = require_passing_aggregate(aggregate, args.min_runs)
     if not args.settings_file.exists():
         raise FileNotFoundError(args.settings_file)

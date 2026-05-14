@@ -133,28 +133,79 @@ def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
     return preflight
 
 
-def require_ros2_wrapper_command(run: dict[str, Any], index: int) -> None:
+def require_command_argument(
+    command_parts: set[str],
+    key: str,
+    expected_value: Any,
+    missing: list[str],
+) -> None:
+    expected = f"{key}:={expected_value}"
+    if expected not in command_parts:
+        missing.append(expected)
+
+
+def require_ros2_wrapper_command(
+    run: dict[str, Any],
+    index: int,
+    aggregate: dict[str, Any],
+    preflight: dict[str, Any],
+) -> None:
     command = run.get("command")
     if not isinstance(command, list):
         raise ValueError(f"run {index} is missing replay command list")
-    command_text = " ".join(str(part) for part in command)
+    command_parts = {str(part) for part in command}
     required_parts = (
         "ros2",
         "launch",
         "orb_slam3_ros2",
         "h30_bag_replay.launch.py",
-        f"image_topic:={ALLOWED_IMAGE_TOPIC}",
     )
-    missing = [part for part in required_parts if part not in command_text]
-    if not any(f"imu_topic:={topic}" in command_text for topic in ALLOWED_IMU_TOPICS):
-        missing.append("imu_topic:=/sync/imu or imu_topic:=/sync/imu_batch")
+    missing = [part for part in required_parts if part not in command_parts]
+    selected_topics = preflight.get("selected_topics", {})
+    require_command_argument(
+        command_parts,
+        "bag_path",
+        aggregate.get("bag_path"),
+        missing,
+    )
+    require_command_argument(
+        command_parts,
+        "image_topic",
+        selected_topics.get("image"),
+        missing,
+    )
+    require_command_argument(
+        command_parts,
+        "imu_topic",
+        selected_topics.get("imu"),
+        missing,
+    )
+    require_command_argument(
+        command_parts,
+        "settings_file",
+        preflight.get("settings_file"),
+        missing,
+    )
+    require_command_argument(
+        command_parts,
+        "qos_profile_overrides_path",
+        preflight.get("qos_profile_overrides_path"),
+        missing,
+    )
+    require_command_argument(command_parts, "rate", preflight.get("rate"), missing)
+    require_command_argument(
+        command_parts,
+        "play_delay",
+        preflight.get("play_delay_sec"),
+        missing,
+    )
     if missing:
         raise ValueError(
             f"run {index} command is not the guarded ROS2 wrapper replay path; "
             f"missing: {', '.join(missing)}"
         )
     if any(
-        f"image_topic:={topic}" in command_text or f"imu_topic:={topic}" in command_text
+        f"image_topic:={topic}" in command_parts or f"imu_topic:={topic}" in command_parts
         for topic in BANNED_SELECTED_TOPICS
     ):
         raise ValueError(f"run {index} command references forbidden replay topics")
@@ -281,6 +332,9 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             f"aggregate is not fully passing: pass_count={pass_count}, "
             f"runs={len(runs)}, all_passed={all_passed}"
         )
+    preflight = aggregate.get("preflight")
+    if not isinstance(preflight, dict):
+        raise ValueError("aggregate is missing replay preflight metadata")
     for index, run in enumerate(runs, start=1):
         if not isinstance(run, dict):
             raise ValueError(f"run {index} is not a JSON object")
@@ -288,7 +342,7 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             raise ValueError(f"run {index} has stability_pass={run.get('stability_pass')}")
         if int(run.get("returncode", 1) or 0) != 0:
             raise ValueError(f"run {index} has returncode={run.get('returncode')}")
-        require_ros2_wrapper_command(run, index)
+        require_ros2_wrapper_command(run, index, aggregate, preflight)
         required_metrics = (
             "imu_initialized",
             "required_v2_tags_present",

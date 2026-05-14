@@ -228,6 +228,22 @@ def require_ros2_wrapper_command(
         "h30_bag_replay.launch.py",
     )
     missing = [part for part in required_parts if part not in command_parts]
+    required_arguments = {
+        "play_bag": "true",
+        "sensor_type": "imu-monocular",
+        "orb_time_offset_mode": "zero_for_sync",
+        "debug_enable": "true",
+        "debug_runtime_metrics": "true",
+        "enable_video_recording": "false",
+        "publish_pose_only_when_tracking_ok": "true",
+        "max_image_queue_size": "2",
+        "max_imu_queue_size": "500",
+        "drop_stale_images": "true",
+        "use_rviz": "false",
+        "use_pangolin": "false",
+    }
+    for key, expected_value in required_arguments.items():
+        require_command_argument(command_parts, key, expected_value, missing)
     selected_topics = preflight.get("selected_topics", {})
     require_command_argument(
         command_parts,
@@ -261,6 +277,8 @@ def require_ros2_wrapper_command(
     )
     require_command_float_argument(command_parts, "rate", preflight.get("rate"), missing)
     require_command_float_argument(command_parts, "duration", "0.0", missing)
+    require_command_float_argument(command_parts, "cam_imu_time_offset", "0.0", missing)
+    require_command_float_argument(command_parts, "max_image_age_ms", "200.0", missing)
     replay_topics = ",".join(str(topic) for topic in preflight.get("replay_topics", []))
     require_command_argument(command_parts, "replay_topics", replay_topics, missing)
     require_command_float_argument(

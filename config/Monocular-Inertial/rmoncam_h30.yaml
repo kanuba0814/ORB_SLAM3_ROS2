@@ -77,6 +77,10 @@ IMU.InsertKFsWhenLost: 0
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
 
+# Low-motion H30 replay repeatedly has 35-50 visual inliers before IMU init.
+# Keep those maps alive long enough to attempt stable inertial initialization.
+Tracking.MinInliersImuMonoPreInit: 35
+
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.
 # 10x is standard for non-lab deployment; tune down if init is too slow.

@@ -155,6 +155,25 @@ def expect_success(root: Path, name: str, aggregate: dict[str, Any]) -> None:
         raise AssertionError(
             f"{name} should have passed, got {result.returncode}: {result.stderr}"
         )
+    output_dir = root / f"{name}_out"
+    required_outputs = (
+        "best_config.yaml",
+        "decision.md",
+        "stability_report.md",
+        "final_stability_report.md",
+        "final_commands.md",
+        "final_patch_summary.md",
+    )
+    missing = [
+        filename
+        for filename in required_outputs
+        if not (output_dir / filename).exists()
+    ]
+    if missing:
+        raise AssertionError(f"{name} did not write required outputs: {missing}")
+    best_config = output_dir / "best_config.yaml"
+    if best_config.read_text(encoding="utf-8") != SETTINGS.read_text(encoding="utf-8"):
+        raise AssertionError(f"{name} best_config.yaml does not match settings")
 
 
 def expect_failure(

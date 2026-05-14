@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import shutil
 import sys
 from pathlib import Path
@@ -19,6 +20,9 @@ DEFAULT_SETTINGS = PACKAGE_ROOT / "config" / "Monocular-Inertial" / "rmoncam_h30
 ALLOWED_IMAGE_TOPIC = "/sync/image_raw"
 ALLOWED_IMU_TOPICS = {"/sync/imu", "/sync/imu_batch"}
 BANNED_SELECTED_TOPICS = {"/image_raw", "/imu/data_raw", "/imu/raw_hw"}
+CAMERA_FPS_RE = re.compile(
+    r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -46,6 +50,34 @@ def require_float(preflight: dict[str, Any], key: str) -> float:
         return float(value)
     except (TypeError, ValueError) as exc:
         raise ValueError(f"preflight {key} is not numeric: {value}") from exc
+
+
+def read_camera_fps(settings_file: Path) -> float | None:
+    for line in settings_file.read_text(encoding="utf-8").splitlines():
+        match = CAMERA_FPS_RE.match(line)
+        if match:
+            return float(match.group(1))
+    return None
+
+
+def require_settings_match_preflight(settings_file: Path, preflight: dict[str, Any]) -> None:
+    preflight_settings = Path(str(preflight.get("settings_file"))).expanduser().resolve()
+    selected_settings = settings_file.expanduser().resolve()
+    if selected_settings != preflight_settings:
+        raise ValueError(
+            "settings file does not match replay preflight: "
+            f"selected={selected_settings}, preflight={preflight_settings}"
+        )
+
+    preflight_fps = require_float(preflight, "settings_camera_fps")
+    current_fps = read_camera_fps(settings_file)
+    if current_fps is None:
+        raise ValueError(f"settings file is missing Camera.fps: {settings_file}")
+    if abs(current_fps - preflight_fps) > 1e-6:
+        raise ValueError(
+            "settings Camera.fps differs from replay preflight: "
+            f"current={current_fps}, preflight={preflight_fps}"
+        )
 
 
 def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
@@ -465,10 +497,11 @@ def main() -> int:
     args = parser.parse_args()
 
     aggregate = load_json(args.aggregate_json)
-    require_final_replay_preflight(aggregate)
+    preflight = require_final_replay_preflight(aggregate)
     runs = require_passing_aggregate(aggregate, args.min_runs)
     if not args.settings_file.exists():
         raise FileNotFoundError(args.settings_file)
+    require_settings_match_preflight(args.settings_file, preflight)
     if not args.kept_commit:
         raise ValueError("at least one --kept-commit entry is required")
     if not args.excluded_hypothesis:

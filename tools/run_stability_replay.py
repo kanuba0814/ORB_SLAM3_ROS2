@@ -76,7 +76,7 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         "run_count": len(summaries),
         "pass_count": sum(1 for item in summaries if item.get("stability_pass")),
         "all_passed": bool(summaries) and all(
-            item.get("stability_pass") and item.get("returncode") in (0, 130, 143)
+            item.get("stability_pass") and item.get("returncode") == 0
             for item in summaries
         ),
         "runs": summaries,
@@ -251,13 +251,12 @@ def main() -> int:
         )
         run_prefix.with_suffix(".md").write_text(render_markdown(summary), encoding="utf-8")
 
-        if returncode not in (0, 130, 143):
+        if returncode != 0:
             print(f"run {run_index} returned {returncode}", file=sys.stderr)
 
     write_aggregate(args.label, bag_path, summaries, args.output_dir)
-    accepted_returncodes = {0, 130, 143}
     return 0 if all(
-        item.get("stability_pass") and item.get("returncode") in accepted_returncodes
+        item.get("stability_pass") and item.get("returncode") == 0
         for item in summaries
     ) else 1
 

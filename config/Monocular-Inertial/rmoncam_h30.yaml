@@ -77,6 +77,10 @@ IMU.InsertKFsWhenLost: 0
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
 
+# Before inertial BA2, the fixed bag repeatedly has good visual matches that
+# inertial pose optimization rejects as outliers; prefer visual pose optimization.
+Tracking.UseVisualPoseOptimizationBeforeInertialBA2: 1
+
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.
 # 10x is standard for non-lab deployment; tune down if init is too slow.

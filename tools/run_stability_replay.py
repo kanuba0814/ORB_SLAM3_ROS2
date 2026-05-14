@@ -75,7 +75,10 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         "bag_path": str(bag_path),
         "run_count": len(summaries),
         "pass_count": sum(1 for item in summaries if item.get("stability_pass")),
-        "all_passed": bool(summaries) and all(item.get("stability_pass") for item in summaries),
+        "all_passed": bool(summaries) and all(
+            item.get("stability_pass") and item.get("returncode") in (0, 130, 143)
+            for item in summaries
+        ),
         "runs": summaries,
     }
     (output_dir / f"{label}.json").write_text(
@@ -203,6 +206,8 @@ def main() -> int:
     )
     parser.add_argument("--timeout-sec", type=float, default=0.0)
     args = parser.parse_args()
+    if args.runs < 1:
+        parser.error("--runs must be at least 1")
 
     bag_path = read_latest_bag(args.bag_path, args.latest_file)
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -250,7 +255,11 @@ def main() -> int:
             print(f"run {run_index} returned {returncode}", file=sys.stderr)
 
     write_aggregate(args.label, bag_path, summaries, args.output_dir)
-    return 0 if all(item.get("stability_pass") for item in summaries) else 1
+    accepted_returncodes = {0, 130, 143}
+    return 0 if all(
+        item.get("stability_pass") and item.get("returncode") in accepted_returncodes
+        for item in summaries
+    ) else 1
 
 
 if __name__ == "__main__":

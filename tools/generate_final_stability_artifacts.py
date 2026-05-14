@@ -128,6 +128,113 @@ def require_ros2_wrapper_command(run: dict[str, Any], index: int) -> None:
         raise ValueError(f"run {index} command references forbidden replay topics")
 
 
+def require_metric_gate(
+    failures: list[str],
+    name: str,
+    value: Any,
+    predicate: Any,
+) -> None:
+    try:
+        passed = predicate(value)
+    except (TypeError, ValueError):
+        passed = False
+    if not passed:
+        failures.append(f"{name}={value}")
+
+
+def require_run_stability_gates(run: dict[str, Any], index: int) -> None:
+    failures: list[str] = []
+    require_metric_gate(
+        failures,
+        "imu_initialized",
+        run.get("imu_initialized"),
+        lambda value: value is True,
+    )
+    require_metric_gate(
+        failures,
+        "required_v2_tags_present",
+        run.get("required_v2_tags_present"),
+        lambda value: value is True,
+    )
+    require_metric_gate(
+        failures,
+        "reset_count_after_init",
+        run.get("reset_count_after_init"),
+        lambda value: int(value) == 0,
+    )
+    require_metric_gate(
+        failures,
+        "ok_ratio_after_init",
+        run.get("ok_ratio_after_init"),
+        lambda value: float(value) >= 0.90,
+    )
+    require_metric_gate(
+        failures,
+        "max_lost_streak_sec_after_init",
+        run.get("max_lost_streak_sec_after_init"),
+        lambda value: float(value) < 5.0,
+    )
+    require_metric_gate(
+        failures,
+        "reset_delta_last_60_sec",
+        run.get("reset_delta_last_60_sec"),
+        lambda value: int(value) == 0,
+    )
+    require_metric_gate(
+        failures,
+        "final_keyframes",
+        run.get("final_keyframes"),
+        lambda value: int(value) >= 20,
+    )
+    require_metric_gate(
+        failures,
+        "median_tracked_map_points_after_init",
+        run.get("median_tracked_map_points_after_init"),
+        lambda value: float(value) >= 80.0,
+    )
+    require_metric_gate(
+        failures,
+        "median_inliers_after_init",
+        run.get("median_inliers_after_init"),
+        lambda value: float(value) >= 50.0,
+    )
+    require_metric_gate(
+        failures,
+        "image_to_last_imu_ms.p95",
+        metric(run, "image_to_last_imu_ms.p95"),
+        lambda value: abs(float(value)) <= 20.0,
+    )
+    require_metric_gate(
+        failures,
+        "processed_image_age_ms.p95",
+        metric(run, "processed_image_age_ms.p95"),
+        lambda value: float(value) < 150.0,
+    )
+    require_metric_gate(
+        failures,
+        "img_buf_size_max",
+        run.get("img_buf_size_max"),
+        lambda value: float(value) <= 2.0,
+    )
+    require_metric_gate(
+        failures,
+        "controlled_backlog_pass",
+        run.get("controlled_backlog_pass"),
+        lambda value: value is True,
+    )
+    require_metric_gate(
+        failures,
+        "invalid_pose_publish_count",
+        run.get("invalid_pose_publish_count"),
+        lambda value: int(value) == 0,
+    )
+    if failures:
+        raise ValueError(
+            f"run {index} does not satisfy final stability gates: "
+            + ", ".join(failures)
+        )
+
+
 def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[dict[str, Any]]:
     runs = aggregate.get("runs")
     if not isinstance(runs, list):
@@ -150,14 +257,12 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
         if int(run.get("returncode", 1) or 0) != 0:
             raise ValueError(f"run {index} has returncode={run.get('returncode')}")
         require_ros2_wrapper_command(run, index)
-        if not run.get("controlled_backlog_pass"):
-            raise ValueError(
-                f"run {index} has controlled_backlog_pass="
-                f"{run.get('controlled_backlog_pass')}"
-            )
         required_metrics = (
+            "imu_initialized",
+            "required_v2_tags_present",
             "first_imu_initialized_time",
             "ok_ratio_after_init",
+            "max_lost_streak_sec_after_init",
             "reset_count_after_init",
             "reset_delta_last_60_sec",
             "final_keyframes",
@@ -179,6 +284,7 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             raise ValueError(
                 f"run {index} is missing final report metrics: {', '.join(missing)}"
             )
+        require_run_stability_gates(run, index)
     return runs
 
 

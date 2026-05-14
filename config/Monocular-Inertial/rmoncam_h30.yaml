@@ -76,9 +76,6 @@ IMU.InsertKFsWhenLost: 0
 # The fixed H30 sync bag has very small inter-keyframe translation after scale
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
-# On the fixed 9Hz replay, a single low-inlier frame before inertial BA2 should
-# use ORB's short recent-lost recovery path instead of clearing the active map.
-Tracking.ResetActiveMapBeforeInertialBA2: 0
 
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.

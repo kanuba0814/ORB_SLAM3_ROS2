@@ -94,6 +94,8 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         "final_keyframes",
         "median_tracked_map_points_after_init",
         "median_inliers_after_init",
+        "image_to_last_imu_ms_p50",
+        "image_to_last_imu_ms_p95",
         "track_ms_p50",
         "track_ms_p95",
         "processed_image_age_ms_p95",
@@ -117,6 +119,10 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
                 "median_tracked_map_points_after_init": item.get(
                     "median_tracked_map_points_after_init"),
                 "median_inliers_after_init": item.get("median_inliers_after_init"),
+                "image_to_last_imu_ms_p50": item.get(
+                    "image_to_last_imu_ms", {}).get("p50"),
+                "image_to_last_imu_ms_p95": item.get(
+                    "image_to_last_imu_ms", {}).get("p95"),
                 "track_ms_p50": item.get("track_ms", {}).get("p50"),
                 "track_ms_p95": item.get("track_ms", {}).get("p95"),
                 "processed_image_age_ms_p95": item.get(
@@ -135,8 +141,8 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",
         "",
-        "| Run | Pass | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | Image Age P95 ms | Img Buf Max | Invalid Pose Publishes |",
-        "| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Run | Pass | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | Img Buf Max | Invalid Pose Publishes |",
+        "| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for index, item in enumerate(summaries, start=1):
         lines.append(
@@ -147,6 +153,7 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
             f"{item.get('final_keyframes')} | "
             f"{item.get('median_inliers_after_init')} | "
             f"{item.get('median_tracked_map_points_after_init')} | "
+            f"{item.get('image_to_last_imu_ms', {}).get('p95')} | "
             f"{item.get('processed_image_age_ms', {}).get('p95')} | "
             f"{item.get('img_buf_size_max')} | "
             f"{item.get('invalid_pose_publish_count')} |"

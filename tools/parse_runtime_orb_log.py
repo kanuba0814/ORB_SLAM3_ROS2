@@ -218,6 +218,7 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         "invalid_pose_publish_count": invalid_pose_publish_count,
         "visual_quality_records": len(visual),
     }
+    image_to_last_imu_p95 = summary["image_to_last_imu_ms"]["p95"]
 
     summary["stability_pass"] = bool(
         summary["imu_initialized"]
@@ -228,6 +229,8 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         and summary["final_keyframes"] >= 20
         and (summary["median_tracked_map_points_after_init"] or 0) >= 80
         and (summary["median_inliers_after_init"] or 0) >= 50
+        and image_to_last_imu_p95 is not None
+        and abs(image_to_last_imu_p95) <= 20.0
         and (summary["processed_image_age_ms"]["p95"] or math.inf) < 150.0
         and summary["img_buf_size_max"] <= 2
         and summary["invalid_pose_publish_count"] == 0
@@ -245,6 +248,8 @@ def render_markdown(summary: dict[str, Any]) -> str:
         ("final_keyframes", summary["final_keyframes"]),
         ("median_tracked_map_points_after_init", summary["median_tracked_map_points_after_init"]),
         ("median_inliers_after_init", summary["median_inliers_after_init"]),
+        ("image_to_last_imu_ms_p50", summary["image_to_last_imu_ms"]["p50"]),
+        ("image_to_last_imu_ms_p95", summary["image_to_last_imu_ms"]["p95"]),
         ("track_ms_p50", summary["track_ms"]["p50"]),
         ("track_ms_p95", summary["track_ms"]["p95"]),
         ("processed_image_age_ms_p95", summary["processed_image_age_ms"]["p95"]),
@@ -270,6 +275,8 @@ def write_csv(summary: dict[str, Any], output: Path) -> None:
         "final_keyframes": summary["final_keyframes"],
         "median_tracked_map_points_after_init": summary["median_tracked_map_points_after_init"],
         "median_inliers_after_init": summary["median_inliers_after_init"],
+        "image_to_last_imu_ms_p50": summary["image_to_last_imu_ms"]["p50"],
+        "image_to_last_imu_ms_p95": summary["image_to_last_imu_ms"]["p95"],
         "track_ms_p50": summary["track_ms"]["p50"],
         "track_ms_p95": summary["track_ms"]["p95"],
         "processed_image_age_ms_p95": summary["processed_image_age_ms"]["p95"],

@@ -79,9 +79,9 @@ LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
 # Delay first inertial acceptance so the H30 replay does not lock onto a weak
 # two-second monocular bootstrap that later resets under ROS2 wrapper replay.
 LocalMapping.ImuMonoInitMinTime: 4.0
-# Keep the post-relocalization IMU reset/recovery window independent from the
-# observed 9Hz bag cadence; 90 frames is about 10 seconds on this replay.
-Tracking.FramesToResetIMU: 90
+# Disable ORB_SLAM3's incomplete post-relocalization ResetFrameIMU window for
+# this replay path; the upstream hook is a TODO and crashes at the frame gate.
+Tracking.FramesToResetIMU: 0
 
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.

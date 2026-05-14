@@ -17,11 +17,23 @@ PACKAGE_ROOT = WORKSPACE / "extra_ws" / "src" / "ORB_SLAM3_ROS2"
 GENERATOR = PACKAGE_ROOT / "tools" / "generate_final_stability_artifacts.py"
 SETTINGS = PACKAGE_ROOT / "config" / "Monocular-Inertial" / "rmoncam_h30.yaml"
 QOS = PACKAGE_ROOT / "config" / "bag_qos_override.yaml"
-BAG_PATH = "/home/gxxl/slam_ws_v2/bags/goalDebug/h30_sync_raw_20260512_172136"
+LATEST_FILES = (
+    WORKSPACE / "bags" / "LATEST_BAG.txt",
+    WORKSPACE / "bags" / "goalDebug" / "LATEST_BAG.txt",
+)
 REPLAY_TOPICS = ["/sync/image_raw", "/sync/imu"]
 CAMERA_FPS_RE = re.compile(
     r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
 )
+
+
+def read_latest_bag() -> str:
+    for latest_file in LATEST_FILES:
+        if latest_file.exists():
+            content = latest_file.read_text(encoding="utf-8").strip()
+            if content:
+                return str(Path(content).expanduser().resolve())
+    raise FileNotFoundError("no LATEST_BAG.txt found")
 
 
 def read_camera_fps(settings_file: Path) -> float:
@@ -33,12 +45,13 @@ def read_camera_fps(settings_file: Path) -> float:
 
 
 def base_command() -> list[str]:
+    bag_path = read_latest_bag()
     return [
         "ros2",
         "launch",
         "orb_slam3_ros2",
         "h30_bag_replay.launch.py",
-        f"bag_path:={BAG_PATH}",
+        f"bag_path:={bag_path}",
         "play_bag:=true",
         "sensor_type:=imu-monocular",
         "image_topic:=/sync/image_raw",
@@ -96,9 +109,10 @@ def base_run() -> dict[str, Any]:
 
 def base_aggregate() -> dict[str, Any]:
     run = base_run()
+    bag_path = read_latest_bag()
     return {
         "label": "synthetic_final_gate_selftest",
-        "bag_path": BAG_PATH,
+        "bag_path": bag_path,
         "run_count": 3,
         "pass_count": 3,
         "all_passed": True,
@@ -252,6 +266,15 @@ def main() -> int:
             "missing_replay_topics",
             missing_topics,
             "preflight is missing replay_topics",
+        )
+
+        wrong_bag = base_aggregate()
+        wrong_bag["bag_path"] = "/tmp/not_the_latest_h30_bag"
+        expect_failure(
+            root,
+            "wrong_bag_path",
+            wrong_bag,
+            "aggregate bag_path does not match current LATEST_BAG",
         )
 
         forbidden_topic = base_aggregate()

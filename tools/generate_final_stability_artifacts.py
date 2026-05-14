@@ -17,6 +17,10 @@ EXTRA_WS = WORKSPACE / "extra_ws"
 PACKAGE_ROOT = EXTRA_WS / "src" / "ORB_SLAM3_ROS2"
 DEFAULT_OUTPUT_DIR = EXTRA_WS / "debug_runs" / "fix_until_stable"
 DEFAULT_SETTINGS = PACKAGE_ROOT / "config" / "Monocular-Inertial" / "rmoncam_h30.yaml"
+DEFAULT_LATEST_FILES = (
+    WORKSPACE / "bags" / "LATEST_BAG.txt",
+    WORKSPACE / "bags" / "goalDebug" / "LATEST_BAG.txt",
+)
 ALLOWED_IMAGE_TOPIC = "/sync/image_raw"
 ALLOWED_IMU_TOPICS = {"/sync/imu", "/sync/imu_batch"}
 ALLOWED_REPLAY_TOPICS = {
@@ -37,6 +41,26 @@ def load_json(path: Path) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError(f"{path} is not a JSON object")
     return data
+
+
+def read_latest_bag() -> Path:
+    for latest_file in DEFAULT_LATEST_FILES:
+        if latest_file.exists():
+            content = latest_file.read_text(encoding="utf-8").strip()
+            if content:
+                return Path(content).expanduser().resolve()
+    raise FileNotFoundError("no LATEST_BAG.txt found for final replay validation")
+
+
+def require_aggregate_bag_matches_latest(aggregate: dict[str, Any]) -> Path:
+    latest_bag = read_latest_bag()
+    aggregate_bag = Path(str(aggregate.get("bag_path"))).expanduser().resolve()
+    if aggregate_bag != latest_bag:
+        raise ValueError(
+            "aggregate bag_path does not match current LATEST_BAG: "
+            f"aggregate={aggregate_bag}, latest={latest_bag}"
+        )
+    return latest_bag
 
 
 def metric(run: dict[str, Any], dotted_key: str) -> Any:
@@ -664,6 +688,7 @@ def main() -> int:
     args = parser.parse_args()
 
     aggregate = load_json(args.aggregate_json)
+    latest_bag = require_aggregate_bag_matches_latest(aggregate)
     preflight = require_final_replay_preflight(aggregate)
     runs = require_passing_aggregate(aggregate, args.min_runs)
     if not args.settings_file.exists():
@@ -703,6 +728,7 @@ def main() -> int:
         + "\n",
         encoding="utf-8",
     )
+    print(f"validated latest bag: {latest_bag}")
     print(f"wrote final artifacts to {args.output_dir}")
     return 0
 

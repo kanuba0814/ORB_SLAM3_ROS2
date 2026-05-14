@@ -290,20 +290,26 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
 
 def render_metrics_table(runs: list[dict[str, Any]]) -> str:
     lines = [
-        "| Run | IMU init time | OK ratio | Reset after init | Final KFs | "
-        "Median inliers | Median MPs | Track p50/p95 ms | Image age p95 ms | "
-        "Img buf max | Dropped images | ORB FPS p50 | Pose blocked | Invalid pose publishes |",
+        "| Run | IMU init time | OK ratio | Reset after init | Reset last 60s | "
+        "Max lost streak s | Final KFs | Median inliers | Median MPs | "
+        "IMU lag p50/p95 ms | Track p50/p95 ms | Image age p95 ms | "
+        "Img buf max | Dropped images | ORB FPS p50 | Pose blocked | "
+        "Invalid pose publishes |",
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-        "---: | ---: | ---: | ---: | ---: |",
+        "---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for index, run in enumerate(runs, start=1):
         lines.append(
             f"| {index} | {run.get('first_imu_initialized_time')} | "
             f"{run.get('ok_ratio_after_init')} | "
             f"{run.get('reset_count_after_init')} | "
+            f"{run.get('reset_delta_last_60_sec')} | "
+            f"{run.get('max_lost_streak_sec_after_init')} | "
             f"{run.get('final_keyframes')} | "
             f"{run.get('median_inliers_after_init')} | "
             f"{run.get('median_tracked_map_points_after_init')} | "
+            f"{metric(run, 'image_to_last_imu_ms.p50')}/"
+            f"{metric(run, 'image_to_last_imu_ms.p95')} | "
             f"{metric(run, 'track_ms.p50')}/{metric(run, 'track_ms.p95')} | "
             f"{metric(run, 'processed_image_age_ms.p95')} | "
             f"{run.get('img_buf_size_max')} | "

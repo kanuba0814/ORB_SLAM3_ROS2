@@ -73,6 +73,17 @@ def median(values: list[Any]) -> float | None:
     return float(statistics.median(clean)) if clean else None
 
 
+def metric_stats(records: list[dict[str, Any]], key: str) -> dict[str, float | None]:
+    values = [record.get(key) for record in records]
+    clean = finite(values)
+    return {
+        "p50": percentile(values, 0.50),
+        "p95": percentile(values, 0.95),
+        "max": max(clean, default=None),
+        "last": clean[-1] if clean else None,
+    }
+
+
 def get_time(record: dict[str, Any]) -> float | None:
     for key in ("track_time_sec", "image_time_sec"):
         value = record.get(key)
@@ -207,11 +218,18 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
             "p95": percentile([r.get("track_ms") for r in timing], 0.95),
             "max": max(finite([r.get("track_ms") for r in timing]), default=None),
         },
+        "input_image_fps_est": metric_stats(queue, "input_image_fps_est"),
+        "input_imu_fps_est": metric_stats(queue, "input_imu_fps_est"),
+        "orb_processed_fps_est": metric_stats(queue, "orb_processed_fps_est"),
+        "oldest_img_age_ms": metric_stats(queue, "oldest_img_age_ms"),
+        "newest_img_age_ms": metric_stats(queue, "newest_img_age_ms"),
         "processed_image_age_ms": {
             "p95": percentile([r.get("processed_image_age_ms") for r in timing], 0.95),
             "max": max(finite([r.get("processed_image_age_ms") for r in timing]), default=None),
         },
         "img_buf_size_max": max(finite([r.get("img_buf_size") for r in queue]), default=0),
+        "img_buf_size_final": metric_stats(queue, "img_buf_size")["last"],
+        "imu_buf_size_max": max(finite([r.get("imu_buf_size") for r in queue]), default=0),
         "dropped_img_count": int(max(finite([r.get("dropped_img_count") for r in queue]), default=0)),
         "dropped_imu_count": int(max(finite([r.get("dropped_imu_count") for r in queue]), default=0)),
         "pose_publish_blocked_count": pose_publish_blocked_count,
@@ -231,6 +249,16 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         )
     )
     summary["required_v2_tags_present"] = required_v2_tags_present
+    processed_age_p95 = summary["processed_image_age_ms"]["p95"]
+    oldest_img_age_p95 = summary["oldest_img_age_ms"]["p95"]
+    orb_processed_fps_p50 = summary["orb_processed_fps_est"]["p50"]
+    summary["controlled_backlog_pass"] = bool(
+        summary["record_counts"].get("queue", 0) > 0
+        and (orb_processed_fps_p50 or 0.0) > 0.0
+        and (processed_age_p95 or math.inf) < 150.0
+        and (oldest_img_age_p95 is None or oldest_img_age_p95 < 150.0)
+        and summary["img_buf_size_max"] <= 2
+    )
 
     summary["stability_pass"] = bool(
         summary["imu_initialized"]
@@ -246,6 +274,7 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         and abs(image_to_last_imu_p95) <= 20.0
         and (summary["processed_image_age_ms"]["p95"] or math.inf) < 150.0
         and summary["img_buf_size_max"] <= 2
+        and summary["controlled_backlog_pass"]
         and summary["invalid_pose_publish_count"] == 0
     )
     return summary
@@ -266,9 +295,19 @@ def render_markdown(summary: dict[str, Any]) -> str:
         ("image_to_last_imu_ms_p95", summary["image_to_last_imu_ms"]["p95"]),
         ("track_ms_p50", summary["track_ms"]["p50"]),
         ("track_ms_p95", summary["track_ms"]["p95"]),
+        ("input_image_fps_est_p50", summary["input_image_fps_est"]["p50"]),
+        ("input_image_fps_est_p95", summary["input_image_fps_est"]["p95"]),
+        ("input_imu_fps_est_p50", summary["input_imu_fps_est"]["p50"]),
+        ("orb_processed_fps_est_p50", summary["orb_processed_fps_est"]["p50"]),
+        ("orb_processed_fps_est_p95", summary["orb_processed_fps_est"]["p95"]),
         ("processed_image_age_ms_p95", summary["processed_image_age_ms"]["p95"]),
+        ("oldest_img_age_ms_p95", summary["oldest_img_age_ms"]["p95"]),
         ("img_buf_size_max", summary["img_buf_size_max"]),
+        ("img_buf_size_final", summary["img_buf_size_final"]),
+        ("imu_buf_size_max", summary["imu_buf_size_max"]),
         ("dropped_img_count", summary["dropped_img_count"]),
+        ("dropped_imu_count", summary["dropped_imu_count"]),
+        ("controlled_backlog_pass", summary["controlled_backlog_pass"]),
         ("pose_publish_blocked_count", summary["pose_publish_blocked_count"]),
         ("invalid_pose_publish_count", summary["invalid_pose_publish_count"]),
     ]
@@ -294,9 +333,19 @@ def write_csv(summary: dict[str, Any], output: Path) -> None:
         "image_to_last_imu_ms_p95": summary["image_to_last_imu_ms"]["p95"],
         "track_ms_p50": summary["track_ms"]["p50"],
         "track_ms_p95": summary["track_ms"]["p95"],
+        "input_image_fps_est_p50": summary["input_image_fps_est"]["p50"],
+        "input_image_fps_est_p95": summary["input_image_fps_est"]["p95"],
+        "input_imu_fps_est_p50": summary["input_imu_fps_est"]["p50"],
+        "orb_processed_fps_est_p50": summary["orb_processed_fps_est"]["p50"],
+        "orb_processed_fps_est_p95": summary["orb_processed_fps_est"]["p95"],
         "processed_image_age_ms_p95": summary["processed_image_age_ms"]["p95"],
+        "oldest_img_age_ms_p95": summary["oldest_img_age_ms"]["p95"],
         "img_buf_size_max": summary["img_buf_size_max"],
+        "img_buf_size_final": summary["img_buf_size_final"],
+        "imu_buf_size_max": summary["imu_buf_size_max"],
         "dropped_img_count": summary["dropped_img_count"],
+        "dropped_imu_count": summary["dropped_imu_count"],
+        "controlled_backlog_pass": summary["controlled_backlog_pass"],
         "pose_publish_blocked_count": summary["pose_publish_blocked_count"],
         "invalid_pose_publish_count": summary["invalid_pose_publish_count"],
     }

@@ -102,9 +102,19 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         "image_to_last_imu_ms_p95",
         "track_ms_p50",
         "track_ms_p95",
+        "input_image_fps_est_p50",
+        "input_image_fps_est_p95",
+        "input_imu_fps_est_p50",
+        "orb_processed_fps_est_p50",
+        "orb_processed_fps_est_p95",
         "processed_image_age_ms_p95",
+        "oldest_img_age_ms_p95",
         "img_buf_size_max",
+        "img_buf_size_final",
+        "imu_buf_size_max",
         "dropped_img_count",
+        "dropped_imu_count",
+        "controlled_backlog_pass",
         "pose_publish_blocked_count",
         "invalid_pose_publish_count",
     ]
@@ -130,10 +140,26 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
                     "image_to_last_imu_ms", {}).get("p95"),
                 "track_ms_p50": item.get("track_ms", {}).get("p50"),
                 "track_ms_p95": item.get("track_ms", {}).get("p95"),
+                "input_image_fps_est_p50": item.get(
+                    "input_image_fps_est", {}).get("p50"),
+                "input_image_fps_est_p95": item.get(
+                    "input_image_fps_est", {}).get("p95"),
+                "input_imu_fps_est_p50": item.get(
+                    "input_imu_fps_est", {}).get("p50"),
+                "orb_processed_fps_est_p50": item.get(
+                    "orb_processed_fps_est", {}).get("p50"),
+                "orb_processed_fps_est_p95": item.get(
+                    "orb_processed_fps_est", {}).get("p95"),
                 "processed_image_age_ms_p95": item.get(
                     "processed_image_age_ms", {}).get("p95"),
+                "oldest_img_age_ms_p95": item.get(
+                    "oldest_img_age_ms", {}).get("p95"),
                 "img_buf_size_max": item.get("img_buf_size_max"),
+                "img_buf_size_final": item.get("img_buf_size_final"),
+                "imu_buf_size_max": item.get("imu_buf_size_max"),
                 "dropped_img_count": item.get("dropped_img_count"),
+                "dropped_imu_count": item.get("dropped_imu_count"),
+                "controlled_backlog_pass": item.get("controlled_backlog_pass"),
                 "pose_publish_blocked_count": item.get("pose_publish_blocked_count"),
                 "invalid_pose_publish_count": item.get("invalid_pose_publish_count"),
             })
@@ -146,8 +172,8 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",
         "",
-        "| Run | Pass | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | Img Buf Max | Invalid Pose Publishes |",
-        "| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| Run | Pass | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | ORB FPS P50 | Input FPS P50 | Backlog OK | Img Buf Max | Invalid Pose Publishes |",
+        "| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: |",
     ]
     for index, item in enumerate(summaries, start=1):
         lines.append(
@@ -161,6 +187,9 @@ def write_aggregate(label: str, bag_path: Path, summaries: list[dict[str, Any]],
             f"{item.get('median_tracked_map_points_after_init')} | "
             f"{item.get('image_to_last_imu_ms', {}).get('p95')} | "
             f"{item.get('processed_image_age_ms', {}).get('p95')} | "
+            f"{item.get('orb_processed_fps_est', {}).get('p50')} | "
+            f"{item.get('input_image_fps_est', {}).get('p50')} | "
+            f"{item.get('controlled_backlog_pass')} | "
             f"{item.get('img_buf_size_max')} | "
             f"{item.get('invalid_pose_publish_count')} |"
         )

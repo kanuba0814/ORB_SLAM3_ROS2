@@ -8,8 +8,11 @@ import json
 import re
 import subprocess
 import tempfile
+from argparse import Namespace
 from pathlib import Path
 from typing import Any
+
+import run_stability_replay
 
 
 WORKSPACE = Path("/home/gxxl/slam_ws_v2")
@@ -17,23 +20,10 @@ PACKAGE_ROOT = WORKSPACE / "extra_ws" / "src" / "ORB_SLAM3_ROS2"
 GENERATOR = PACKAGE_ROOT / "tools" / "generate_final_stability_artifacts.py"
 SETTINGS = PACKAGE_ROOT / "config" / "Monocular-Inertial" / "rmoncam_h30.yaml"
 QOS = PACKAGE_ROOT / "config" / "bag_qos_override.yaml"
-LATEST_FILES = (
-    WORKSPACE / "bags" / "LATEST_BAG.txt",
-    WORKSPACE / "bags" / "goalDebug" / "LATEST_BAG.txt",
-)
-REPLAY_TOPICS = ["/sync/image_raw", "/sync/imu"]
 CAMERA_FPS_RE = re.compile(
     r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
 )
-
-
-def read_latest_bag() -> str:
-    for latest_file in LATEST_FILES:
-        if latest_file.exists():
-            content = latest_file.read_text(encoding="utf-8").strip()
-            if content:
-                return str(Path(content).expanduser().resolve())
-    raise FileNotFoundError("no LATEST_BAG.txt found")
+_REPLAY_FIXTURE: dict[str, Any] | None = None
 
 
 def read_camera_fps(settings_file: Path) -> float:
@@ -44,38 +34,47 @@ def read_camera_fps(settings_file: Path) -> float:
     raise ValueError(f"settings file is missing Camera.fps: {settings_file}")
 
 
-def base_command() -> list[str]:
-    bag_path = read_latest_bag()
-    return [
-        "ros2",
-        "launch",
-        "orb_slam3_ros2",
-        "h30_bag_replay.launch.py",
-        f"bag_path:={bag_path}",
-        "play_bag:=true",
-        "sensor_type:=imu-monocular",
-        "image_topic:=/sync/image_raw",
-        "imu_topic:=/sync/imu",
-        f"settings_file:={SETTINGS}",
-        "cam_imu_time_offset:=0.0",
-        "orb_time_offset_mode:=zero_for_sync",
-        "debug_enable:=true",
-        "debug_runtime_metrics:=true",
-        "enable_video_recording:=false",
-        "publish_pose_only_when_tracking_ok:=true",
-        "max_image_queue_size:=2",
-        "max_imu_queue_size:=500",
-        "drop_stale_images:=true",
-        "max_image_age_ms:=200.0",
-        "use_rviz:=false",
-        "use_pangolin:=false",
-        "rate:=1.0",
-        "duration:=0.0",
-        "start_offset:=0.0",
-        "replay_topics:=" + ",".join(REPLAY_TOPICS),
-        "play_delay:=2.0",
-        f"qos_profile_overrides_path:={QOS}",
-    ]
+def replay_args() -> Namespace:
+    return Namespace(
+        sensor_type="imu-monocular",
+        image_topic="/sync/image_raw",
+        imu_topic="/sync/imu",
+        settings_file=str(SETTINGS),
+        cam_imu_time_offset="0.0",
+        orb_time_offset_mode="zero_for_sync",
+        debug_enable=True,
+        debug_runtime_metrics=True,
+        enable_video_recording=False,
+        publish_pose_only_when_tracking_ok=True,
+        max_image_queue_size="2",
+        max_imu_queue_size="500",
+        drop_stale_images=True,
+        max_image_age_ms="200.0",
+        use_rviz=False,
+        use_pangolin=False,
+        rate="1.0",
+        duration="0.0",
+        start_offset="0.0",
+        replay_topics="",
+        play_delay="2.0",
+        qos_profile_overrides_path=str(QOS),
+        timeout_sec=210.0,
+    )
+
+
+def replay_fixture() -> dict[str, Any]:
+    global _REPLAY_FIXTURE
+    if _REPLAY_FIXTURE is None:
+        args = replay_args()
+        bag_path = run_stability_replay.read_latest_bag(None, None)
+        preflight = run_stability_replay.preflight_replay(args, bag_path)
+        command = run_stability_replay.launch_command(args, bag_path)
+        _REPLAY_FIXTURE = {
+            "bag_path": str(bag_path),
+            "command": command,
+            "preflight": preflight,
+        }
+    return copy.deepcopy(_REPLAY_FIXTURE)
 
 
 def base_run() -> dict[str, Any]:
@@ -83,7 +82,7 @@ def base_run() -> dict[str, Any]:
         "stability_pass": True,
         "returncode": 0,
         "errors": [],
-        "command": base_command(),
+        "command": replay_fixture()["command"],
         "imu_initialized": True,
         "required_v2_tags_present": True,
         "first_imu_initialized_time": 10.0,
@@ -109,28 +108,16 @@ def base_run() -> dict[str, Any]:
 
 def base_aggregate() -> dict[str, Any]:
     run = base_run()
-    bag_path = read_latest_bag()
+    fixture = replay_fixture()
+    preflight = fixture["preflight"]
+    preflight["settings_camera_fps"] = read_camera_fps(SETTINGS)
     return {
         "label": "synthetic_final_gate_selftest",
-        "bag_path": bag_path,
+        "bag_path": fixture["bag_path"],
         "run_count": 3,
         "pass_count": 3,
         "all_passed": True,
-        "preflight": {
-            "selected_topics": {"image": "/sync/image_raw", "imu": "/sync/imu"},
-            "replay_topics": REPLAY_TOPICS,
-            "image_topic_stats": {"count": 10, "fps_span": 8.0},
-            "settings_file": str(SETTINGS),
-            "qos_profile_overrides_path": str(QOS),
-            "settings_camera_fps": read_camera_fps(SETTINGS),
-            "required_timeout_sec": 120.0,
-            "timeout_sec": 210.0,
-            "bag_time_span_sec": 100.0,
-            "replay_duration_sec": 100.0,
-            "rate": 1.0,
-            "start_offset_sec": 0.0,
-            "play_delay_sec": 2.0,
-        },
+        "preflight": preflight,
         "runs": [copy.deepcopy(run) for _ in range(3)],
     }
 

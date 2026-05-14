@@ -20,14 +20,27 @@ set(_ORB_SLAM3_ROOT_HINTS
 )
 
 # Find built-in DBoW2
-# Find ORB_SLAM3
+# Find ORB_SLAM3. Prefer the explicit ORB_SLAM3_ROOT_DIR before any underlay
+# install prefix; otherwise stale installed headers can mask the live core tree.
 find_path(ORB_SLAM3_INCLUDE_DIR NAMES System.h
-          PATHS ${_ORB_SLAM3_ROOT_HINTS}
-          PATH_SUFFIXES include)
+          PATHS "${ORB_SLAM3_ROOT_DIR}"
+          PATH_SUFFIXES include
+          NO_DEFAULT_PATH)
+if(NOT ORB_SLAM3_INCLUDE_DIR)
+  find_path(ORB_SLAM3_INCLUDE_DIR NAMES System.h
+            PATHS ${_ORB_SLAM3_ROOT_HINTS}
+            PATH_SUFFIXES include)
+endif()
 
 find_library(ORB_SLAM3_LIBRARY NAMES ORB_SLAM3 libORB_SLAM3
-             PATHS ${_ORB_SLAM3_ROOT_HINTS}
-             PATH_SUFFIXES lib)
+  PATHS "${ORB_SLAM3_ROOT_DIR}"
+  PATH_SUFFIXES lib
+  NO_DEFAULT_PATH)
+if(NOT ORB_SLAM3_LIBRARY)
+  find_library(ORB_SLAM3_LIBRARY NAMES ORB_SLAM3 libORB_SLAM3
+    PATHS ${_ORB_SLAM3_ROOT_HINTS}
+    PATH_SUFFIXES lib)
+endif()
 
 if(ORB_SLAM3_INCLUDE_DIR)
   get_filename_component(_ORB_SLAM3_ROOT_FROM_INCLUDE "${ORB_SLAM3_INCLUDE_DIR}" DIRECTORY)
@@ -55,7 +68,7 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(ORB_SLAM3  DEFAULT_MSG
                                   ORB_SLAM3_LIBRARY ORB_SLAM3_INCLUDE_DIR DBoW2_INCLUDE_DIR DBoW2_LIBRARY g2o_LIBRARY)
 
-mark_as_advanced(ORB_SLAM3_INCLUDE_DIR ORB_SLAM3_LIBRARY )
+mark_as_advanced(ORB_SLAM3_INCLUDE_DIR ORB_SLAM3_LIBRARY)
 
 set(ORB_SLAM3_LIBRARIES ${ORB_SLAM3_LIBRARY} ${DBoW2_LIBRARY} ${g2o_LIBRARY})
 set(ORB_SLAM3_INCLUDE_DIRS ${ORB_SLAM3_INCLUDE_DIR} ${DBoW2_INCLUDE_DIR})

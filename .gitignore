@@ -4,6 +4,9 @@
 *.db3
 metadata.yaml
 **build**
+build/
+install/
+log/
 ORBvoc.txt
 bags/
 videos/
@@ -12,11 +15,6 @@ videos/
 *.pcd
 occupancy_grids/
 images/
-
-# Build artifacts
-build/
-install/
-log/
-
-# Output data
+debug_runs/
 output/
+__pycache__/

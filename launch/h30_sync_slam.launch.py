@@ -1,4 +1,5 @@
-"""Launch ORB-SLAM3 Monocular-Inertial for pre-synchronised topics.
+"""
+Launch ORB-SLAM3 Monocular-Inertial for pre-synchronised topics.
 
 This launch file starts ONLY the SLAM node and optional visualisation.
 It does NOT start the camera or IMU drivers — those should be started
@@ -14,8 +15,9 @@ The SLAM node subscribes to:
   - /sync/image_raw  (synchronised image)
   - /sync/imu        (synchronised IMU with interpolated boundaries)
 
-Since synchronisation is handled externally by cam_imu_sync,
-cam_imu_time_offset is set to 0.0.
+Since cam_imu_sync already publishes synchronized topics, this launch keeps
+cam_imu_time_offset at 0.0 and uses orb_time_offset_mode=zero_for_sync to avoid
+applying the legacy -15.74 ms offset a second time.
 """
 
 from launch import LaunchDescription
@@ -23,6 +25,7 @@ from launch.actions import DeclareLaunchArgument
 from launch.conditions import IfCondition
 from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
 from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
 from launch_ros.substitutions import FindPackageShare
 
 
@@ -42,6 +45,19 @@ def generate_launch_description():
             default_value=PathJoinSubstitution([
                 FindPackageShare('orb_slam3_ros2'),
                 'config', 'Monocular-Inertial', 'rmoncam_h30.yaml'])),
+        DeclareLaunchArgument('debug_enable', default_value='false'),
+        DeclareLaunchArgument(
+            'orb_time_offset_mode', default_value='zero_for_sync'),
+        DeclareLaunchArgument(
+            'debug_expected_imu_rate_hz', default_value='0.0'),
+        DeclareLaunchArgument('imu_accel_scale_x', default_value='1.0'),
+        DeclareLaunchArgument('imu_accel_scale_y', default_value='1.0'),
+        DeclareLaunchArgument('imu_accel_scale_z', default_value='1.0'),
+        DeclareLaunchArgument('imu_gyro_scale_x', default_value='1.0'),
+        DeclareLaunchArgument('imu_gyro_scale_y', default_value='1.0'),
+        DeclareLaunchArgument('imu_gyro_scale_z', default_value='1.0'),
+        DeclareLaunchArgument('imu_accel_axis_order', default_value='xyz'),
+        DeclareLaunchArgument('imu_gyro_axis_order', default_value='xyz'),
 
         # ── ORB-SLAM3 Monocular-Inertial ──
         Node(
@@ -54,7 +70,36 @@ def generate_launch_description():
                 'image_topic': LaunchConfiguration('image_topic'),
                 'imu_topic': LaunchConfiguration('imu_topic'),
                 'settings_file': LaunchConfiguration('settings_file'),
-                'cam_imu_time_offset': 0.0,  # sync done externally
+                'cam_imu_time_offset': 0.0,
+                'debug_enable': LaunchConfiguration('debug_enable'),
+                'orb_time_offset_mode':
+                    LaunchConfiguration('orb_time_offset_mode'),
+                'debug_expected_imu_rate_hz':
+                    LaunchConfiguration('debug_expected_imu_rate_hz'),
+                'imu_accel_scale_x': ParameterValue(
+                    LaunchConfiguration('imu_accel_scale_x'),
+                    value_type=float),
+                'imu_accel_scale_y': ParameterValue(
+                    LaunchConfiguration('imu_accel_scale_y'),
+                    value_type=float),
+                'imu_accel_scale_z': ParameterValue(
+                    LaunchConfiguration('imu_accel_scale_z'),
+                    value_type=float),
+                'imu_gyro_scale_x': ParameterValue(
+                    LaunchConfiguration('imu_gyro_scale_x'),
+                    value_type=float),
+                'imu_gyro_scale_y': ParameterValue(
+                    LaunchConfiguration('imu_gyro_scale_y'),
+                    value_type=float),
+                'imu_gyro_scale_z': ParameterValue(
+                    LaunchConfiguration('imu_gyro_scale_z'),
+                    value_type=float),
+                'imu_accel_axis_order': ParameterValue(
+                    LaunchConfiguration('imu_accel_axis_order'),
+                    value_type=str),
+                'imu_gyro_axis_order': ParameterValue(
+                    LaunchConfiguration('imu_gyro_axis_order'),
+                    value_type=str),
             }],
         ),
 

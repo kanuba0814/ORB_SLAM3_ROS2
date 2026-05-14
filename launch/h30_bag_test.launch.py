@@ -1,4 +1,5 @@
-"""Launch ORB-SLAM3 for bag replay testing.
+r"""
+Launch ORB-SLAM3 for bag replay testing.
 
 Usage:
     # Terminal 1: Start SLAM
@@ -37,6 +38,11 @@ def generate_launch_description():
             default_value=PathJoinSubstitution([
                 pkg_share,
                 'config', 'Monocular-Inertial', 'rmoncam_h30.yaml'])),
+        DeclareLaunchArgument('debug_enable', default_value='false'),
+        DeclareLaunchArgument(
+            'orb_time_offset_mode', default_value='legacy_warn'),
+        DeclareLaunchArgument(
+            'debug_expected_imu_rate_hz', default_value='0.0'),
 
         # ── ORB-SLAM3 Monocular-Inertial ──
         Node(
@@ -50,6 +56,11 @@ def generate_launch_description():
                 'imu_topic': LaunchConfiguration('imu_topic'),
                 'settings_file': LaunchConfiguration('settings_file'),
                 'cam_imu_time_offset': 0.0,
+                'debug_enable': LaunchConfiguration('debug_enable'),
+                'orb_time_offset_mode':
+                    LaunchConfiguration('orb_time_offset_mode'),
+                'debug_expected_imu_rate_hz':
+                    LaunchConfiguration('debug_expected_imu_rate_hz'),
             }],
         ),
 

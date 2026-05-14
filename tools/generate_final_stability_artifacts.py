@@ -122,6 +122,14 @@ def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
     timeout_sec = require_float(preflight, "timeout_sec")
     for key in ("bag_time_span_sec", "replay_duration_sec", "rate", "play_delay_sec"):
         require_float(preflight, key)
+    bag_time_span_sec = require_float(preflight, "bag_time_span_sec")
+    replay_duration_sec = require_float(preflight, "replay_duration_sec")
+    if abs(replay_duration_sec - bag_time_span_sec) > 1e-6:
+        raise ValueError(
+            "preflight replay duration is not the full bag duration: "
+            f"replay_duration_sec={replay_duration_sec}, "
+            f"bag_time_span_sec={bag_time_span_sec}"
+        )
     if timeout_sec <= 0.0:
         raise ValueError("preflight timeout_sec must be positive for final replay evidence")
     if timeout_sec < required_timeout_sec:
@@ -193,6 +201,7 @@ def require_ros2_wrapper_command(
         missing,
     )
     require_command_argument(command_parts, "rate", preflight.get("rate"), missing)
+    require_command_argument(command_parts, "duration", "0.0", missing)
     require_command_argument(
         command_parts,
         "play_delay",

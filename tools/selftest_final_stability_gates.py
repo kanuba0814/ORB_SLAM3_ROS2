@@ -187,6 +187,34 @@ def main() -> int:
         positive = base_aggregate()
         expect_success(root, "positive", positive)
 
+        aggregate_not_passed = base_aggregate()
+        aggregate_not_passed["pass_count"] = 2
+        aggregate_not_passed["all_passed"] = False
+        expect_failure(
+            root,
+            "aggregate_not_passed",
+            aggregate_not_passed,
+            "aggregate is not fully passing",
+        )
+
+        nonzero_returncode = base_aggregate()
+        nonzero_returncode["runs"][0]["returncode"] = 1
+        expect_failure(
+            root,
+            "nonzero_returncode",
+            nonzero_returncode,
+            "run 1 has returncode=1",
+        )
+
+        missing_v2_tags = base_aggregate()
+        missing_v2_tags["runs"][0]["required_v2_tags_present"] = False
+        expect_failure(
+            root,
+            "missing_v2_tags",
+            missing_v2_tags,
+            "required_v2_tags_present=False",
+        )
+
         missing_topics = base_aggregate()
         del missing_topics["preflight"]["replay_topics"]
         expect_failure(
@@ -232,6 +260,15 @@ def main() -> int:
         runtime_error = base_aggregate()
         runtime_error["runs"][0]["runtime_error_count"] = 1
         expect_failure(root, "runtime_error", runtime_error, "runtime_error_count=1")
+
+        invalid_pose = base_aggregate()
+        invalid_pose["runs"][0]["invalid_pose_publish_count"] = 1
+        expect_failure(
+            root,
+            "invalid_pose_publish",
+            invalid_pose,
+            "invalid_pose_publish_count=1",
+        )
 
         reset_after_init = base_aggregate()
         reset_after_init["runs"][0]["reset_count_after_init"] = 1

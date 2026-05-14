@@ -221,7 +221,14 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
     image_to_last_imu_p95 = summary["image_to_last_imu_ms"]["p95"]
     required_v2_tags_present = all(
         summary["record_counts"].get(name, 0) > 0
-        for name in ("queue", "timing", "imu_window", "pose_gate", "visual_quality")
+        for name in (
+            "queue",
+            "timing",
+            "imu_window",
+            "state_transition",
+            "pose_gate",
+            "visual_quality",
+        )
     )
     summary["required_v2_tags_present"] = required_v2_tags_present
 

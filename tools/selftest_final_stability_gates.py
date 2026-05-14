@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -18,6 +19,17 @@ SETTINGS = PACKAGE_ROOT / "config" / "Monocular-Inertial" / "rmoncam_h30.yaml"
 QOS = PACKAGE_ROOT / "config" / "bag_qos_override.yaml"
 BAG_PATH = "/home/gxxl/slam_ws_v2/bags/goalDebug/h30_sync_raw_20260512_172136"
 REPLAY_TOPICS = ["/sync/image_raw", "/sync/imu"]
+CAMERA_FPS_RE = re.compile(
+    r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
+)
+
+
+def read_camera_fps(settings_file: Path) -> float:
+    for line in settings_file.read_text(encoding="utf-8").splitlines():
+        match = CAMERA_FPS_RE.match(line)
+        if match:
+            return float(match.group(1))
+    raise ValueError(f"settings file is missing Camera.fps: {settings_file}")
 
 
 def base_command() -> list[str]:
@@ -95,7 +107,7 @@ def base_aggregate() -> dict[str, Any]:
             "image_topic_stats": {"count": 10, "fps_span": 8.0},
             "settings_file": str(SETTINGS),
             "qos_profile_overrides_path": str(QOS),
-            "settings_camera_fps": 9.0,
+            "settings_camera_fps": read_camera_fps(SETTINGS),
             "required_timeout_sec": 120.0,
             "timeout_sec": 210.0,
             "bag_time_span_sec": 100.0,

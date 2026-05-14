@@ -1183,21 +1183,17 @@ private:
       try {
         const int64_t track_call_begin_ns = steady_now_ns();
         if (!use_imu) {
+          std::lock_guard<std::mutex> lock(orbslam3_mutex_);
           auto Tcw = orb_slam3_system_->TrackMonocular(imageFrame, tIm);
-          {
-            std::lock_guard<std::mutex> lock(orbslam3_mutex_);
-            Tcw_.translation() = Tcw.translation();
-            Tcw_.setQuaternion(Tcw.unit_quaternion());
-          }
+          Tcw_.translation() = Tcw.translation();
+          Tcw_.setQuaternion(Tcw.unit_quaternion());
           track_called = true;
         } else if (vImuMeas.size() > 1) {
+          std::lock_guard<std::mutex> lock(orbslam3_mutex_);
           auto Tcw =
             orb_slam3_system_->TrackMonocular(imageFrame, tIm, vImuMeas);
-          {
-            std::lock_guard<std::mutex> lock(orbslam3_mutex_);
-            Tcw_.translation() = Tcw.translation();
-            Tcw_.setQuaternion(Tcw.unit_quaternion());
-          }
+          Tcw_.translation() = Tcw.translation();
+          Tcw_.setQuaternion(Tcw.unit_quaternion());
           track_called = true;
         } else {
           skip_reason = "insufficient_imu";

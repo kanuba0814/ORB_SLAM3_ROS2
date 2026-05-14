@@ -104,6 +104,7 @@ def launch_command(args: argparse.Namespace, bag_path: Path) -> list[str]:
         f"use_pangolin:={str(args.use_pangolin).lower()}",
         f"rate:={args.rate}",
         f"duration:={args.duration}",
+        f"start_offset:={args.start_offset}",
         f"replay_topics:={args.replay_topics}",
         f"play_delay:={args.play_delay}",
         f"qos_profile_overrides_path:={args.qos_profile_overrides_path}",
@@ -269,10 +270,16 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
     try:
         rate = max(float(args.rate), 1e-6)
         requested_duration_sec = float(args.duration)
+        start_offset_sec = float(args.start_offset)
         play_delay_sec = max(float(args.play_delay), 0.0)
         timeout_sec = float(args.timeout_sec)
     except ValueError as exc:
         raise ValueError(f"invalid replay timing argument: {exc}") from exc
+    if start_offset_sec != 0.0:
+        raise ValueError(
+            "final stability replay must start at the beginning of the bag: "
+            f"start_offset={start_offset_sec}"
+        )
     bag_time_span_sec = read_bag_time_span_sec(bag_path)
     replay_duration_sec = (
         requested_duration_sec
@@ -313,6 +320,7 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
         "required_timeout_sec": required_timeout_sec,
         "timeout_sec": timeout_sec,
         "rate": rate,
+        "start_offset_sec": start_offset_sec,
         "play_delay_sec": play_delay_sec,
         "settings_camera_fps": settings_camera_fps,
         "settings_file": str(settings_file),
@@ -459,6 +467,8 @@ def write_aggregate(
         f"`{(preflight or {}).get('timeout_sec')}`",
         "- rate: "
         f"`{(preflight or {}).get('rate')}`",
+        "- start_offset_sec: "
+        f"`{(preflight or {}).get('start_offset_sec')}`",
         "- play_delay_sec: "
         f"`{(preflight or {}).get('play_delay_sec')}`",
         f"- run_count: `{len(summaries)}`",
@@ -527,6 +537,7 @@ def main() -> int:
     parser.add_argument("--use-pangolin", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--rate", default="1.0")
     parser.add_argument("--duration", default="0.0")
+    parser.add_argument("--start-offset", default="0.0")
     parser.add_argument(
         "--replay-topics",
         default="",
@@ -568,6 +579,8 @@ def main() -> int:
         )
         print(f"preflight passed for {bag_path}")
         print(f"replay_topics: {replay_topics}")
+        if preflight_info:
+            print(f"start_offset_sec: {preflight_info.get('start_offset_sec')}")
         return 0
     args.output_dir.mkdir(parents=True, exist_ok=True)
     summaries: list[dict[str, Any]] = []

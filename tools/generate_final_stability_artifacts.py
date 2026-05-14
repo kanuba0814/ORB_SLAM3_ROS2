@@ -153,6 +153,12 @@ def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
     timeout_sec = require_float(preflight, "timeout_sec")
     for key in ("bag_time_span_sec", "replay_duration_sec", "rate", "play_delay_sec"):
         require_float(preflight, key)
+    start_offset_sec = require_float(preflight, "start_offset_sec")
+    if start_offset_sec != 0.0:
+        raise ValueError(
+            "preflight replay did not start at the beginning of the bag: "
+            f"start_offset_sec={start_offset_sec}"
+        )
     bag_time_span_sec = require_float(preflight, "bag_time_span_sec")
     replay_duration_sec = require_float(preflight, "replay_duration_sec")
     if abs(replay_duration_sec - bag_time_span_sec) > 1e-6:
@@ -277,6 +283,7 @@ def require_ros2_wrapper_command(
     )
     require_command_float_argument(command_parts, "rate", preflight.get("rate"), missing)
     require_command_float_argument(command_parts, "duration", "0.0", missing)
+    require_command_float_argument(command_parts, "start_offset", "0.0", missing)
     require_command_float_argument(command_parts, "cam_imu_time_offset", "0.0", missing)
     require_command_float_argument(command_parts, "max_image_age_ms", "200.0", missing)
     replay_topics = ",".join(str(topic) for topic in preflight.get("replay_topics", []))
@@ -573,6 +580,7 @@ def render_report(
         f"`{preflight.get('image_topic_stats', {}).get('fps_span')}`",
         f"- timeout_sec: `{preflight.get('timeout_sec')}`",
         f"- required_timeout_sec: `{preflight.get('required_timeout_sec')}`",
+        f"- start_offset_sec: `{preflight.get('start_offset_sec')}`",
         "",
         "## Launch Command",
         "",

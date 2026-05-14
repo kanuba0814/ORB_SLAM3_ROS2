@@ -58,6 +58,7 @@ def base_command() -> list[str]:
         "use_pangolin:=false",
         "rate:=1.0",
         "duration:=0.0",
+        "start_offset:=0.0",
         "replay_topics:=" + ",".join(REPLAY_TOPICS),
         "play_delay:=2.0",
         f"qos_profile_overrides_path:={QOS}",
@@ -113,6 +114,7 @@ def base_aggregate() -> dict[str, Any]:
             "bag_time_span_sec": 100.0,
             "replay_duration_sec": 100.0,
             "rate": 1.0,
+            "start_offset_sec": 0.0,
             "play_delay_sec": 2.0,
         },
         "runs": [copy.deepcopy(run) for _ in range(3)],
@@ -284,6 +286,24 @@ def main() -> int:
             "use_rviz:=true",
         )
         expect_failure(root, "rviz_enabled", rviz_enabled, "use_rviz:=false")
+
+        nonzero_start_offset = base_aggregate()
+        nonzero_start_offset["preflight"]["start_offset_sec"] = 1.0
+        expect_failure(
+            root,
+            "nonzero_start_offset",
+            nonzero_start_offset,
+            "preflight replay did not start at the beginning of the bag",
+        )
+
+        missing_start_offset_arg = base_aggregate()
+        remove_command_arg(missing_start_offset_arg["runs"][0], "start_offset:=0.0")
+        expect_failure(
+            root,
+            "missing_start_offset_arg",
+            missing_start_offset_arg,
+            "start_offset:=0.0",
+        )
 
         runtime_error = base_aggregate()
         runtime_error["runs"][0]["runtime_error_count"] = 1

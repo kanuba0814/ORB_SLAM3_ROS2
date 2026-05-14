@@ -858,6 +858,7 @@ private:
       nan_if_unavailable(state.has_velocity, state.velocity.y());
     const double velocity_z =
       nan_if_unavailable(state.has_velocity, state.velocity.z());
+    double pose_drift_m = 0.0;
 
     {
       std::lock_guard<std::mutex> pose_lock(debug_pose_mutex_);
@@ -868,6 +869,7 @@ private:
       if (state.has_pose) {
         debug_last_pose_drift_m_ = (state.pose - debug_pose_base_t_).norm();
       }
+      pose_drift_m = debug_last_pose_drift_m_;
     }
 
     for (const auto &event : events) {
@@ -938,7 +940,7 @@ private:
         << "pose_x=" << pose_x << ' '
         << "pose_y=" << pose_y << ' '
         << "pose_z=" << pose_z << ' '
-        << "pose_drift_m=" << debug_last_pose_drift_m_ << ' '
+        << "pose_drift_m=" << pose_drift_m << ' '
         << "track_called=" << (track_called ? 1 : 0) << ' '
         << "skip_reason=" << (skip_reason.empty() ? "none" : skip_reason) << ' '
         << "image_header_ns=" << image_header_ns << ' '
@@ -996,23 +998,39 @@ private:
       ? 0.0 : (now - debug_last_summary_ns_) / 1e9;
     const uint64_t orb_count = debug_orb_frame_count_.load();
     double fps = elapsed > 0.0
-      ? (orb_count - debug_last_summary_frame_count_) / elapsed
-      : 0.0;
+                   ? (orb_count - debug_last_summary_frame_count_) / elapsed
+                   : 0.0;
     debug_last_summary_ns_ = now;
     debug_last_summary_frame_count_ = orb_count;
+    double pose_drift_m = 0.0;
+    double pose_yaw_drift_rad = 0.0;
+    {
+      std::lock_guard<std::mutex> pose_lock(debug_pose_mutex_);
+      pose_drift_m = debug_last_pose_drift_m_;
+      pose_yaw_drift_rad = debug_last_pose_yaw_drift_rad_;
+    }
+    double observed_imu_rate_hz = 0.0;
+    double gyro_mean[3] = {0.0, 0.0, 0.0};
+    double acc_mean[3] = {0.0, 0.0, 0.0};
+    {
+      std::lock_guard<std::mutex> imu_lock(debug_imu_stats_mutex_);
+      observed_imu_rate_hz = observed_imu_rate_hz_;
+      for (size_t index = 0; index < 3; ++index) {
+        gyro_mean[index] = debug_gyro_mean_[index];
+        acc_mean[index] = debug_acc_mean_[index];
+      }
+    }
     std::lock_guard<std::mutex> lock(debug_mutex_);
-    RCLCPP_INFO(
-      get_logger(),
-      "[orb_summary] steady_ns=%ld orb_frames=%lu orb_fps=%.6f "
-      "observed_imu_rate_hz=%.3f yaml_imu_frequency=%.3f "
-      "debug_expected_imu_rate_hz=%.3f pose_drift_m=%.9f "
-      "pose_yaw_drift_rad=%.9f "
-      "gyro_mean=(%.5f,%.5f,%.5f) acc_mean=(%.5f,%.5f,%.5f)",
-      now, orb_count, fps, observed_imu_rate_hz_,
-      yaml_imu_frequency_, debug_expected_imu_rate_hz_,
-      debug_last_pose_drift_m_, debug_last_pose_yaw_drift_rad_,
-      debug_gyro_mean_[0], debug_gyro_mean_[1], debug_gyro_mean_[2],
-      debug_acc_mean_[0], debug_acc_mean_[1], debug_acc_mean_[2]);
+    RCLCPP_INFO(get_logger(),
+                "[orb_summary] steady_ns=%ld orb_frames=%lu orb_fps=%.6f "
+                "observed_imu_rate_hz=%.3f yaml_imu_frequency=%.3f "
+                "debug_expected_imu_rate_hz=%.3f pose_drift_m=%.9f "
+                "pose_yaw_drift_rad=%.9f "
+                "gyro_mean=(%.5f,%.5f,%.5f) acc_mean=(%.5f,%.5f,%.5f)",
+                now, orb_count, fps, observed_imu_rate_hz, yaml_imu_frequency_,
+                debug_expected_imu_rate_hz_, pose_drift_m, pose_yaw_drift_rad,
+                gyro_mean[0], gyro_mean[1], gyro_mean[2], acc_mean[0],
+                acc_mean[1], acc_mean[2]);
   }
 
   // ── image_callback: lightweight, only buffers ───────────────────
@@ -1218,6 +1236,7 @@ private:
     int64_t now_ns = steady_now_ns();
     input_imu_count_total_++;
     if (debug_enable_) {
+      std::lock_guard<std::mutex> imu_lock(debug_imu_stats_mutex_);
       debug_imu_window_count_++;
       debug_imu_total_count_++;
       double n = static_cast<double>(debug_imu_total_count_);
@@ -1429,6 +1448,7 @@ private:
   std::mutex debug_mutex_;
   std::mutex debug_queue_mutex_;
   std::mutex debug_pose_mutex_;
+  std::mutex debug_imu_stats_mutex_;
   std::atomic<uint64_t> debug_orb_frame_count_{0};
   uint64_t debug_last_summary_frame_count_{0};
   uint64_t debug_pose_count_{0};

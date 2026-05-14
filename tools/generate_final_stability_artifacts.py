@@ -152,6 +152,34 @@ def require_command_argument(
         missing.append(expected)
 
 
+def command_value(command_parts: set[str], key: str) -> str | None:
+    prefix = f"{key}:="
+    for part in command_parts:
+        if part.startswith(prefix):
+            return part[len(prefix):]
+    return None
+
+
+def require_command_float_argument(
+    command_parts: set[str],
+    key: str,
+    expected_value: Any,
+    missing: list[str],
+) -> None:
+    actual_value = command_value(command_parts, key)
+    try:
+        expected_float = float(expected_value)
+        actual_float = float(actual_value) if actual_value is not None else None
+    except (TypeError, ValueError):
+        actual_float = None
+        expected_float = None
+    if actual_float is None or expected_float is None:
+        missing.append(f"{key}:={expected_value}")
+        return
+    if abs(actual_float - expected_float) > 1e-9:
+        missing.append(f"{key}:={expected_value}")
+
+
 def require_ros2_wrapper_command(
     run: dict[str, Any],
     index: int,
@@ -200,9 +228,9 @@ def require_ros2_wrapper_command(
         preflight.get("qos_profile_overrides_path"),
         missing,
     )
-    require_command_argument(command_parts, "rate", preflight.get("rate"), missing)
-    require_command_argument(command_parts, "duration", "0.0", missing)
-    require_command_argument(
+    require_command_float_argument(command_parts, "rate", preflight.get("rate"), missing)
+    require_command_float_argument(command_parts, "duration", "0.0", missing)
+    require_command_float_argument(
         command_parts,
         "play_delay",
         preflight.get("play_delay_sec"),

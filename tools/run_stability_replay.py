@@ -382,12 +382,22 @@ def write_aggregate(
         f"`{(preflight or {}).get('image_topic_stats', {}).get('fps_span')}`",
         "- settings_camera_fps: "
         f"`{(preflight or {}).get('settings_camera_fps')}`",
+        "- settings_file: "
+        f"`{(preflight or {}).get('settings_file')}`",
+        "- qos_profile_overrides_path: "
+        f"`{(preflight or {}).get('qos_profile_overrides_path')}`",
         "- bag_time_span_sec: "
         f"`{(preflight or {}).get('bag_time_span_sec')}`",
+        "- replay_duration_sec: "
+        f"`{(preflight or {}).get('replay_duration_sec')}`",
         "- required_timeout_sec: "
         f"`{(preflight or {}).get('required_timeout_sec')}`",
         "- timeout_sec: "
         f"`{(preflight or {}).get('timeout_sec')}`",
+        "- rate: "
+        f"`{(preflight or {}).get('rate')}`",
+        "- play_delay_sec: "
+        f"`{(preflight or {}).get('play_delay_sec')}`",
         f"- run_count: `{len(summaries)}`",
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",

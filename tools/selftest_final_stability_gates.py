@@ -216,6 +216,15 @@ def main() -> int:
             "aggregate is not fully passing",
         )
 
+        run_count_mismatch = base_aggregate()
+        run_count_mismatch["run_count"] = 4
+        expect_failure(
+            root,
+            "run_count_mismatch",
+            run_count_mismatch,
+            "aggregate run_count does not match runs length",
+        )
+
         nonzero_returncode = base_aggregate()
         nonzero_returncode["runs"][0]["returncode"] = 1
         expect_failure(

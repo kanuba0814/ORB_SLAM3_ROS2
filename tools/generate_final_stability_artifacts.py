@@ -421,6 +421,11 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
     all_passed = bool(aggregate.get("all_passed"))
     if run_count < min_runs or len(runs) < min_runs:
         raise ValueError(f"need at least {min_runs} replay runs, found {len(runs)}")
+    if run_count != len(runs):
+        raise ValueError(
+            f"aggregate run_count does not match runs length: "
+            f"run_count={run_count}, runs={len(runs)}"
+        )
     if pass_count != len(runs) or not all_passed:
         raise ValueError(
             f"aggregate is not fully passing: pass_count={pass_count}, "

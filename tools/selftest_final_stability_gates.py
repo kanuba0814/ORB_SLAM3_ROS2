@@ -77,8 +77,10 @@ def replay_fixture() -> dict[str, Any]:
     return copy.deepcopy(_REPLAY_FIXTURE)
 
 
-def base_run() -> dict[str, Any]:
+def base_run(run_index: int = 1) -> dict[str, Any]:
     return {
+        "run_index": run_index,
+        "elapsed_wall_sec": 100.0 + run_index,
         "stability_pass": True,
         "returncode": 0,
         "errors": [],
@@ -107,7 +109,6 @@ def base_run() -> dict[str, Any]:
 
 
 def base_aggregate() -> dict[str, Any]:
-    run = base_run()
     fixture = replay_fixture()
     preflight = fixture["preflight"]
     preflight["settings_camera_fps"] = read_camera_fps(SETTINGS)
@@ -118,7 +119,7 @@ def base_aggregate() -> dict[str, Any]:
         "pass_count": 3,
         "all_passed": True,
         "preflight": preflight,
-        "runs": [copy.deepcopy(run) for _ in range(3)],
+        "runs": [base_run(index) for index in range(1, 4)],
     }
 
 
@@ -235,6 +236,24 @@ def main() -> int:
             "nonzero_returncode",
             nonzero_returncode,
             "run 1 has returncode=1",
+        )
+
+        run_index_mismatch = base_aggregate()
+        run_index_mismatch["runs"][1]["run_index"] = 99
+        expect_failure(
+            root,
+            "run_index_mismatch",
+            run_index_mismatch,
+            "run 2 has run_index=99, expected 2",
+        )
+
+        missing_elapsed = base_aggregate()
+        del missing_elapsed["runs"][0]["elapsed_wall_sec"]
+        expect_failure(
+            root,
+            "missing_elapsed",
+            missing_elapsed,
+            "run 1 has invalid elapsed_wall_sec=None",
         )
 
         missing_v2_tags = base_aggregate()

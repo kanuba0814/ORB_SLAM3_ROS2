@@ -468,6 +468,19 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
     for index, run in enumerate(runs, start=1):
         if not isinstance(run, dict):
             raise ValueError(f"run {index} is not a JSON object")
+        if int(run.get("run_index", 0) or 0) != index:
+            raise ValueError(
+                f"run {index} has run_index={run.get('run_index')}, expected {index}"
+            )
+        elapsed_wall_sec = run.get("elapsed_wall_sec")
+        try:
+            elapsed_ok = float(elapsed_wall_sec) > 0.0
+        except (TypeError, ValueError):
+            elapsed_ok = False
+        if not elapsed_ok:
+            raise ValueError(
+                f"run {index} has invalid elapsed_wall_sec={elapsed_wall_sec}"
+            )
         if not run.get("stability_pass"):
             raise ValueError(f"run {index} has stability_pass={run.get('stability_pass')}")
         if int(run.get("returncode", 1) or 0) != 0:
@@ -477,6 +490,8 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             raise ValueError(f"run {index} has runtime errors: {errors[:3]}")
         require_ros2_wrapper_command(run, index, aggregate, preflight)
         required_metrics = (
+            "run_index",
+            "elapsed_wall_sec",
             "imu_initialized",
             "required_v2_tags_present",
             "first_imu_initialized_time",

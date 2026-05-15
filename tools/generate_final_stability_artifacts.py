@@ -546,10 +546,10 @@ def render_metrics_table(runs: list[dict[str, Any]]) -> str:
         "| Run | IMU init time | OK ratio | Reset after init | Reset last 60s | "
         "Max lost streak s | Final KFs | Median inliers | Median MPs | "
         "IMU lag p50/p95 ms | Track p50/p95 ms | Image age p95 ms | "
-        "Img buf max | Dropped images | ORB FPS p50 | Pose blocked | "
+        "Img buf max | Dropped images | ORB FPS p50 | Backlog pass | Pose blocked | "
         "Invalid pose publishes | Runtime errors |",
         "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-        "---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for index, run in enumerate(runs, start=1):
         lines.append(
@@ -568,6 +568,7 @@ def render_metrics_table(runs: list[dict[str, Any]]) -> str:
             f"{run.get('img_buf_size_max')} | "
             f"{run.get('dropped_img_count')} | "
             f"{metric(run, 'orb_processed_fps_est.p50')} | "
+            f"{run.get('controlled_backlog_pass')} | "
             f"{run.get('pose_publish_blocked_count')} | "
             f"{run.get('invalid_pose_publish_count')} | "
             f"{run.get('runtime_error_count')} |"

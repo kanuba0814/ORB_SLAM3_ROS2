@@ -51,6 +51,16 @@ CONFIG_SNAPSHOT_KEYS = (
     "Tracking.ResetActiveMapBeforeInertialBA2",
     "Tracking.MinInliersImuMonoPostInit",
 )
+REQUIRED_EXCLUDED_HYPOTHESIS_TERMS = {
+    "offset": ("offset",),
+    "Tbc": ("tbc",),
+    "IMU units": ("imu units",),
+    "QoS": ("qos",),
+    "nFeatures": ("nfeatures",),
+    "queue backlog": ("queue backlog",),
+    "LocalMapping backlog": ("localmapping backlog",),
+    "pose fake publishing": ("pose fake publishing",),
+}
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -117,6 +127,20 @@ def read_config_snapshot(settings_file: Path) -> dict[str, str]:
         if match:
             values[match.group(1)] = match.group(2).strip()
     return {key: values.get(key, "(missing)") for key in CONFIG_SNAPSHOT_KEYS}
+
+
+def require_excluded_hypothesis_coverage(excluded_hypotheses: list[str]) -> None:
+    normalized = "\n".join(excluded_hypotheses).lower()
+    missing = [
+        label
+        for label, terms in REQUIRED_EXCLUDED_HYPOTHESIS_TERMS.items()
+        if not any(term in normalized for term in terms)
+    ]
+    if missing:
+        raise ValueError(
+            "excluded hypotheses are missing required topics: "
+            + ", ".join(missing)
+        )
 
 
 def require_settings_match_preflight(settings_file: Path, preflight: dict[str, Any]) -> None:
@@ -792,6 +816,7 @@ def main() -> int:
         raise ValueError("at least one --kept-commit entry is required")
     if not args.excluded_hypothesis:
         raise ValueError("at least one --excluded-hypothesis entry is required")
+    require_excluded_hypothesis_coverage(args.excluded_hypothesis)
     if not args.risk:
         raise ValueError("at least one --risk entry is required")
 

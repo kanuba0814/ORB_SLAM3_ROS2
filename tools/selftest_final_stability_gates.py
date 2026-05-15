@@ -24,6 +24,16 @@ CAMERA_FPS_RE = re.compile(
     r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
 )
 _REPLAY_FIXTURE: dict[str, Any] | None = None
+REQUIRED_EXCLUDED_HYPOTHESES = [
+    "offset hypothesis excluded",
+    "Tbc hypothesis excluded",
+    "IMU units hypothesis excluded",
+    "QoS hypothesis excluded",
+    "nFeatures hypothesis excluded",
+    "queue backlog hypothesis excluded",
+    "LocalMapping backlog hypothesis excluded",
+    "pose fake publishing hypothesis excluded",
+]
 
 
 def read_camera_fps(settings_file: Path) -> float:
@@ -130,26 +140,27 @@ def run_generator(
     root: Path,
     name: str,
     aggregate: dict[str, Any],
+    excluded_hypotheses: list[str] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     aggregate_path = root / f"{name}.json"
     aggregate_path.write_text(
         json.dumps(aggregate, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
+    command = [
+        "python3",
+        str(GENERATOR),
+        str(aggregate_path),
+        "--output-dir",
+        str(root / f"{name}_out"),
+        "--kept-commit",
+        "synthetic kept commit",
+    ]
+    for excluded in excluded_hypotheses or REQUIRED_EXCLUDED_HYPOTHESES:
+        command.extend(["--excluded-hypothesis", excluded])
+    command.extend(["--risk", "synthetic risk"])
     return subprocess.run(
-        [
-            "python3",
-            str(GENERATOR),
-            str(aggregate_path),
-            "--output-dir",
-            str(root / f"{name}_out"),
-            "--kept-commit",
-            "synthetic kept commit",
-            "--excluded-hypothesis",
-            "synthetic excluded hypothesis",
-            "--risk",
-            "synthetic risk",
-        ],
+        command,
         capture_output=True,
         text=True,
         check=False,
@@ -203,8 +214,9 @@ def expect_failure(
     name: str,
     aggregate: dict[str, Any],
     expected_text: str,
+    excluded_hypotheses: list[str] | None = None,
 ) -> None:
-    result = run_generator(root, name, aggregate)
+    result = run_generator(root, name, aggregate, excluded_hypotheses)
     if result.returncode == 0:
         raise AssertionError(f"{name} should have failed")
     output = result.stdout + result.stderr
@@ -227,6 +239,19 @@ def main() -> int:
         root = Path(tmp)
         positive = base_aggregate()
         expect_success(root, "positive", positive)
+
+        missing_excluded_topic = base_aggregate()
+        expect_failure(
+            root,
+            "missing_excluded_hypothesis_topic",
+            missing_excluded_topic,
+            "excluded hypotheses are missing required topics: LocalMapping backlog",
+            [
+                item
+                for item in REQUIRED_EXCLUDED_HYPOTHESES
+                if "LocalMapping backlog" not in item
+            ],
+        )
 
         aggregate_not_passed = base_aggregate()
         aggregate_not_passed["pass_count"] = 2

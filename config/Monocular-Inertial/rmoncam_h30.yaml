@@ -83,6 +83,9 @@ LocalMapping.ImuMonoInitMinTime: 4.0
 # ORB_SLAM3's ResetFrameIMU hook is a TODO and the IMU-prediction handoff is
 # unstable on this dataset, so put the gate beyond any replay frame id.
 Tracking.FramesToResetIMU: 100000
+# Do not clear a usable H30 map on one transient low-inlier frame before BA2.
+# Keep RECENTLY_LOST recovery alive; the final stability gate rejects bad pose.
+Tracking.ResetActiveMapBeforeInertialBA2: 0
 
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.

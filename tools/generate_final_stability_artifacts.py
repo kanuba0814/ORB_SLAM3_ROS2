@@ -558,17 +558,19 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
 
 def render_metrics_table(runs: list[dict[str, Any]]) -> str:
     lines = [
-        "| Run | IMU init time | OK ratio | Reset after init | Reset last 60s | "
+        "| Run | Pass | Timed out | IMU init time | OK ratio | Reset after init | Reset last 60s | "
         "Max lost streak s | Final KFs | Median inliers | Median MPs | "
         "IMU lag p50/p95 ms | Track p50/p95 ms | Image age p95 ms | "
         "Img buf max | Dropped images | ORB FPS p50 | Backlog pass | Pose blocked | "
         "Invalid pose publishes | Runtime errors |",
-        "| ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
-        "---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+        "| ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | "
+        "---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for index, run in enumerate(runs, start=1):
         lines.append(
-            f"| {index} | {run.get('first_imu_initialized_time')} | "
+            f"| {index} | {run.get('stability_pass')} | "
+            f"{run.get('timed_out')} | "
+            f"{run.get('first_imu_initialized_time')} | "
             f"{run.get('ok_ratio_after_init')} | "
             f"{run.get('reset_count_after_init')} | "
             f"{run.get('reset_delta_last_60_sec')} | "

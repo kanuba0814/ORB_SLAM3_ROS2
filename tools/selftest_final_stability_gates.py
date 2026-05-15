@@ -189,6 +189,7 @@ def expect_success(root: Path, name: str, aggregate: dict[str, Any]) -> None:
         "- imu_topic_fps_span:",
         "- qos_override_topics:",
         "Backlog pass",
+        "Pass | Timed out",
     ):
         if snippet not in report:
             raise AssertionError(f"{name} final report is missing {snippet}")

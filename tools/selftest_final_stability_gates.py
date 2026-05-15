@@ -286,10 +286,11 @@ def test_pose_gate_parser_quality(root: Path) -> None:
         tracked_mappoints: str,
         publish: str = "1",
         reason: str = "ok",
+        has_pose: str = "1",
     ) -> str:
         return (
             "[orb_pose_gate] tracking_state="
-            f"{state} imu_initialized=1 reset_count=0 has_pose=1 "
+            f"{state} imu_initialized=1 reset_count=0 has_pose={has_pose} "
             f"num_inliers={inliers} num_tracked_mappoints={tracked_mappoints} "
             f"publish_pose={publish} reason={reason}"
         )
@@ -328,6 +329,12 @@ def test_pose_gate_parser_quality(root: Path) -> None:
         root,
         "pose_gate_missing_quality_publish",
         line("OK", "nan", "20"),
+        1,
+    )
+    expect_pose_gate_invalid_count(
+        root,
+        "pose_gate_no_pose_publish",
+        line("OK", "120", "120", has_pose="0"),
         1,
     )
 

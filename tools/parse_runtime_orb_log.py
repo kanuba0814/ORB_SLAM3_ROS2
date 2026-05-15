@@ -102,6 +102,10 @@ def numeric_field(record: dict[str, Any], key: str) -> float | None:
 
 
 def invalid_pose_publish(record: dict[str, Any]) -> bool:
+    has_pose = numeric_field(record, "has_pose")
+    if has_pose is None or int(has_pose) != 1:
+        return True
+
     state = str(record.get("tracking_state", "UNKNOWN"))
     if state not in OK_STATES:
         return True

@@ -365,6 +365,15 @@ def main() -> int:
             "reset_count_after_init=1",
         )
 
+        imu_window_p50_jump = base_aggregate()
+        imu_window_p50_jump["runs"][0]["image_to_last_imu_ms"]["p50"] = 30.0
+        expect_failure(
+            root,
+            "imu_window_p50_jump",
+            imu_window_p50_jump,
+            "image_to_last_imu_ms.p50=30.0",
+        )
+
     print("final stability gate selftest passed")
     return 0
 

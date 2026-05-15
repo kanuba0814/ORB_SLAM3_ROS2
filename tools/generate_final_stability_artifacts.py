@@ -402,6 +402,12 @@ def require_run_stability_gates(run: dict[str, Any], index: int) -> None:
     )
     require_metric_gate(
         failures,
+        "image_to_last_imu_ms.p50",
+        metric(run, "image_to_last_imu_ms.p50"),
+        lambda value: abs(float(value)) <= 20.0,
+    )
+    require_metric_gate(
+        failures,
         "image_to_last_imu_ms.p95",
         metric(run, "image_to_last_imu_ms.p95"),
         lambda value: abs(float(value)) <= 20.0,

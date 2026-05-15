@@ -237,6 +237,7 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         "visual_quality_records": len(visual),
         "runtime_error_count": len(errors),
     }
+    image_to_last_imu_p50 = summary["image_to_last_imu_ms"]["p50"]
     image_to_last_imu_p95 = summary["image_to_last_imu_ms"]["p95"]
     required_v2_tags_present = all(
         summary["record_counts"].get(name, 0) > 0
@@ -271,6 +272,8 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
         and summary["final_keyframes"] >= 20
         and (summary["median_tracked_map_points_after_init"] or 0) >= 80
         and (summary["median_inliers_after_init"] or 0) >= 50
+        and image_to_last_imu_p50 is not None
+        and abs(image_to_last_imu_p50) <= 20.0
         and image_to_last_imu_p95 is not None
         and abs(image_to_last_imu_p95) <= 20.0
         and (summary["processed_image_age_ms"]["p95"] or math.inf) < 150.0

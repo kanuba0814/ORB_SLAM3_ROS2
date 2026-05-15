@@ -221,6 +221,19 @@ def expect_success(root: Path, name: str, aggregate: dict[str, Any]) -> None:
     ):
         if snippet not in patch_summary:
             raise AssertionError(f"{name} patch summary is missing {snippet}")
+    final_commands = (output_dir / "final_commands.md").read_text(encoding="utf-8")
+    for snippet in (
+        "## Container Build",
+        "docker exec -w /home/gxxl/slam_ws_v2/extra_ws",
+        "colcon build --packages-select orb_slam3_ros2",
+        "## Container Replay Harness",
+        "run_stability_replay.py",
+        "--runs 3",
+        "## Replay 1",
+        "ros2 launch orb_slam3_ros2 h30_bag_replay.launch.py",
+    ):
+        if snippet not in final_commands:
+            raise AssertionError(f"{name} final commands are missing {snippet}")
 
 
 def expect_failure(

@@ -645,8 +645,48 @@ def render_metrics_table(runs: list[dict[str, Any]]) -> str:
     return "\n".join(lines)
 
 
-def render_commands(runs: list[dict[str, Any]]) -> str:
-    lines = ["# Final Commands", ""]
+def render_commands(
+    aggregate: dict[str, Any],
+    runs: list[dict[str, Any]],
+    preflight: dict[str, Any],
+) -> str:
+    label = aggregate.get("label")
+    timeout_sec = preflight.get("timeout_sec")
+    build_command = (
+        "docker exec -w /home/gxxl/slam_ws_v2/extra_ws "
+        "autoware_env_v2_host bash -lc 'source /opt/ros/humble/setup.bash && "
+        "source /home/gxxl/slam_ws_v2/driver_ws/install/setup.bash && "
+        "ORB_SLAM3_ROOT_DIR=/home/gxxl/slam_ws_v2/libs/ORB_SLAM3 "
+        "colcon build --packages-select orb_slam3_ros2 --cmake-args "
+        "-DORB_SLAM3_ROOT_DIR=/home/gxxl/slam_ws_v2/libs/ORB_SLAM3'"
+    )
+    replay_command = (
+        "docker exec -w /home/gxxl/slam_ws_v2 autoware_env_v2_host bash -lc "
+        "'source /opt/ros/humble/setup.bash && "
+        "source /home/gxxl/slam_ws_v2/driver_ws/install/setup.bash && "
+        "source /home/gxxl/slam_ws_v2/extra_ws/install/setup.bash && "
+        "ORB_SLAM3_ROOT_DIR=/home/gxxl/slam_ws_v2/libs/ORB_SLAM3 "
+        "python3 extra_ws/src/ORB_SLAM3_ROS2/tools/run_stability_replay.py "
+        f"--runs {len(runs)} --label {label} --timeout-sec {timeout_sec} "
+        "--min-pose-publish-inliers 15 "
+        "--min-pose-publish-tracked-mappoints 15'"
+    )
+    lines = [
+        "# Final Commands",
+        "",
+        "## Container Build",
+        "",
+        "```bash",
+        build_command,
+        "```",
+        "",
+        "## Container Replay Harness",
+        "",
+        "```bash",
+        replay_command,
+        "```",
+        "",
+    ]
     for index, run in enumerate(runs, start=1):
         command = run.get("command")
         if isinstance(command, list):
@@ -873,7 +913,7 @@ def main() -> int:
         encoding="utf-8",
     )
     (args.output_dir / "final_commands.md").write_text(
-        render_commands(runs),
+        render_commands(aggregate, runs, preflight),
         encoding="utf-8",
     )
     (args.output_dir / "final_patch_summary.md").write_text(

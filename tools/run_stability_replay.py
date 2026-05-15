@@ -8,6 +8,7 @@ import csv
 import json
 import os
 import re
+import signal
 import sqlite3
 import subprocess
 import sys
@@ -625,21 +626,33 @@ def main() -> int:
             log_file.write("$ " + " ".join(command) + "\n")
             log_file.flush()
             started = time.time()
+            timed_out = False
+            process = subprocess.Popen(
+                command,
+                cwd=EXTRA_WS,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                text=True,
+                env=os.environ.copy(),
+                start_new_session=True,
+            )
             try:
-                completed = subprocess.run(
-                    command,
-                    cwd=EXTRA_WS,
-                    stdout=log_file,
-                    stderr=subprocess.STDOUT,
-                    text=True,
-                    timeout=args.timeout_sec if args.timeout_sec > 0 else None,
-                    check=False,
-                    env=os.environ.copy(),
+                returncode = process.wait(
+                    timeout=args.timeout_sec if args.timeout_sec > 0 else None
                 )
-                returncode = completed.returncode
             except subprocess.TimeoutExpired:
+                timed_out = True
                 returncode = 124
                 log_file.write(f"\nTIMEOUT after {args.timeout_sec} seconds\n")
+                try:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    process.wait(timeout=10.0)
+                except subprocess.TimeoutExpired:
+                    log_file.write("TIMEOUT cleanup escalated to SIGKILL\n")
+                    os.killpg(process.pid, signal.SIGKILL)
+                    process.wait()
+                except ProcessLookupError:
+                    process.wait()
             elapsed = time.time() - started
             log_file.write(f"\nreturncode={returncode} elapsed_sec={elapsed:.3f}\n")
 
@@ -647,6 +660,8 @@ def main() -> int:
         summary["run_index"] = run_index
         summary["returncode"] = returncode
         summary["elapsed_wall_sec"] = elapsed
+        summary["timed_out"] = timed_out
+        summary["timeout_sec"] = args.timeout_sec
         summary["command"] = command
         summaries.append(summary)
         run_prefix.with_suffix(".json").write_text(

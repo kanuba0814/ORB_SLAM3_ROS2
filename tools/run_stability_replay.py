@@ -391,6 +391,8 @@ def write_aggregate(
         "run",
         "returncode",
         "stability_pass",
+        "timed_out",
+        "timeout_sec",
         "required_v2_tags_present",
         "imu_initialized",
         "ok_ratio_after_init",
@@ -428,6 +430,8 @@ def write_aggregate(
                 "run": index,
                 "returncode": item.get("returncode"),
                 "stability_pass": item.get("stability_pass"),
+                "timed_out": item.get("timed_out"),
+                "timeout_sec": item.get("timeout_sec"),
                 "required_v2_tags_present": item.get("required_v2_tags_present"),
                 "imu_initialized": item.get("imu_initialized"),
                 "ok_ratio_after_init": item.get("ok_ratio_after_init"),
@@ -506,13 +510,15 @@ def write_aggregate(
         f"- pass_count: `{aggregate['pass_count']}`",
         f"- all_passed: `{aggregate['all_passed']}`",
         "",
-        "| Run | Return | Pass | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | ORB FPS P50 | Input FPS P50 | Backlog OK | Img Buf Max | Invalid Pose Publishes | Runtime Errors |",
-        "| ---: | ---: | --- | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
+        "| Run | Return | Pass | Timed Out | Timeout sec | V2 Tags | IMU Init | OK Ratio | Reset After Init | Final KFs | Median Inliers | Median MPs | IMU Lag P95 ms | Image Age P95 ms | ORB FPS P50 | Input FPS P50 | Backlog OK | Img Buf Max | Invalid Pose Publishes | Runtime Errors |",
+        "| ---: | ---: | --- | --- | ---: | --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | ---: | ---: | ---: |",
     ]
     for index, item in enumerate(summaries, start=1):
         lines.append(
             f"| {index} | {item.get('returncode')} | "
             f"{item.get('stability_pass')} | "
+            f"{item.get('timed_out')} | "
+            f"{item.get('timeout_sec')} | "
             f"{item.get('required_v2_tags_present')} | "
             f"{item.get('imu_initialized')} | "
             f"{item.get('ok_ratio_after_init')} | "

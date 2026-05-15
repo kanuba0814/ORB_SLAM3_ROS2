@@ -26,8 +26,11 @@ Camera1.k4:  0.020281540657900984
 Camera.width: 640
 Camera.height: 480
 
-# Camera frames per second
-Camera.fps: 9
+# Camera frames per second.
+# Used by ORB-SLAM3 for keyframe-insertion timing (Tracking.cc:3348 c1a:
+# mCurrentFrame.mnId >= mnLastKeyFrameId + mMaxFrames where mMaxFrames=fps).
+# Set this to match the actual /sync/image_raw publish rate of the bag/camera.
+Camera.fps: 30
 
 # Color order of the images (0: BGR, 1: RGB. It is ignored if images are grayscale)
 Camera.RGB: 1
@@ -97,7 +100,10 @@ IMU.NoiseGyro: 8.7266e-04   # rad/s/sqrt(Hz)  (datasheet 8.73e-5 x10)
 IMU.NoiseAcc:  5.8840e-03   # m/s^2/sqrt(Hz)  (datasheet 5.88e-4 x10)
 IMU.GyroWalk:  1.9393e-04   # rad/s^1.5       (datasheet 1.94e-5 x10)
 IMU.AccWalk:   3.4323e-03   # m/s^2.5         (datasheet 3.43e-4 x10)
-IMU.Frequency: 100.0        # Hz – H30 /sync/imu E-series calibration rate
+IMU.Frequency: 229.0        # Hz – /sync/imu observed rate in h30_150hz_150s bag.
+# NOTE: ORB-SLAM3's IMU.Frequency is informational only (Settings.cc:420 reads it,
+# Settings.cc:603/623 logs it). Pre-integration uses each sample's real timestamp
+# (ImuTypes.h IMU::Point.t), so IMU rate jitter (e.g. 151–155 Hz raw) is fine.
 
 #--------------------------------------------------------------------------------------------
 # ORB Parameters

@@ -79,9 +79,17 @@ IMU.InsertKFsWhenLost: 0
 # The fixed H30 sync bag has very small inter-keyframe translation after scale
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
-# Delay first inertial acceptance so the H30 replay does not lock onto a weak
-# early monocular bootstrap that later resets under ROS2 wrapper replay.
-LocalMapping.ImuMonoInitMinTime: 4.0
+# Delay first inertial acceptance so InitializeIMU sees a longer KF window
+# and is less polluted by short bursts of high gyro motion.
+# 4.0 -> 8.0: on h30_150hz_150s with strong rotation in t=10-30s,
+# 4s window let ORB attribute ~9 deg/s of true rotation to gyro bias
+# (truth ~0.03 deg/s), causing post-init pose to drift to >10km before
+# VIBA2 corrected the bias too late. Doubling the window forces ORB to
+# average over more diverse KF orientations.
+LocalMapping.ImuMonoInitMinTime: 8.0
+# Same goal: require more KFs so any single high-gyro KF carries less weight
+# in bias estimation. Default is 10.
+LocalMapping.ImuMonoInitMinKFs: 15
 # Keep H30 wrapper replay in the visual recovery path for the full fixed bag.
 # ORB_SLAM3's ResetFrameIMU hook is a TODO and the IMU-prediction handoff is
 # unstable on this dataset, so put the gate beyond any replay frame id.

@@ -140,15 +140,12 @@ def generate_launch_description():
             "publish_pose_only_when_tracking_ok",
             default_value="true",
         ),
-        DeclareLaunchArgument("min_pose_publish_inliers", default_value="15"),
+        DeclareLaunchArgument("min_pose_publish_inliers", default_value="0"),
         DeclareLaunchArgument(
             "min_pose_publish_tracked_mappoints",
-            default_value="15",
+            default_value="0",
         ),
-        DeclareLaunchArgument("max_image_queue_size", default_value="2"),
         DeclareLaunchArgument("max_imu_queue_size", default_value="500"),
-        DeclareLaunchArgument("drop_stale_images", default_value="true"),
-        DeclareLaunchArgument("max_image_age_ms", default_value="200.0"),
         DeclareLaunchArgument("use_rviz", default_value="false"),
         DeclareLaunchArgument("use_pangolin", default_value="false"),
         DeclareLaunchArgument("rate", default_value="1.0"),
@@ -240,21 +237,9 @@ def generate_launch_description():
                     LaunchConfiguration("min_pose_publish_tracked_mappoints"),
                     value_type=int,
                 ),
-                "max_image_queue_size": ParameterValue(
-                    LaunchConfiguration("max_image_queue_size"),
-                    value_type=int,
-                ),
                 "max_imu_queue_size": ParameterValue(
                     LaunchConfiguration("max_imu_queue_size"),
                     value_type=int,
-                ),
-                "drop_stale_images": ParameterValue(
-                    LaunchConfiguration("drop_stale_images"),
-                    value_type=bool,
-                ),
-                "max_image_age_ms": ParameterValue(
-                    LaunchConfiguration("max_image_age_ms"),
-                    value_type=float,
                 ),
                 "orb_time_offset_mode":
                     ParameterValue(

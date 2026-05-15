@@ -165,6 +165,13 @@ def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
         raise ValueError("preflight image topic has no recorded messages")
     if image_topic_stats.get("fps_span") is None:
         raise ValueError("preflight image topic is missing fps_span")
+    imu_topic_stats = preflight.get("imu_topic_stats")
+    if not isinstance(imu_topic_stats, dict):
+        raise ValueError("preflight is missing imu_topic_stats")
+    if int(imu_topic_stats.get("count") or 0) <= 0:
+        raise ValueError("preflight IMU topic has no recorded messages")
+    if imu_topic_stats.get("fps_span") is None:
+        raise ValueError("preflight IMU topic is missing fps_span")
 
     required_paths = ("settings_file", "qos_profile_overrides_path")
     for key in required_paths:

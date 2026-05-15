@@ -318,6 +318,7 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
             "imu": args.imu_topic,
         },
         "image_topic_stats": read_topic_stats(bag_path, args.image_topic),
+        "imu_topic_stats": read_topic_stats(bag_path, args.imu_topic),
         "bag_time_span_sec": bag_time_span_sec,
         "replay_duration_sec": replay_duration_sec,
         "required_timeout_sec": required_timeout_sec,

@@ -285,6 +285,24 @@ def main() -> int:
             "preflight is missing replay_topics",
         )
 
+        missing_imu_stats = base_aggregate()
+        del missing_imu_stats["preflight"]["imu_topic_stats"]
+        expect_failure(
+            root,
+            "missing_imu_topic_stats",
+            missing_imu_stats,
+            "preflight is missing imu_topic_stats",
+        )
+
+        empty_imu_stats = base_aggregate()
+        empty_imu_stats["preflight"]["imu_topic_stats"]["count"] = 0
+        expect_failure(
+            root,
+            "empty_imu_topic_stats",
+            empty_imu_stats,
+            "preflight IMU topic has no recorded messages",
+        )
+
         wrong_bag = base_aggregate()
         wrong_bag["bag_path"] = "/tmp/not_the_latest_h30_bag"
         expect_failure(

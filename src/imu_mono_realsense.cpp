@@ -128,6 +128,8 @@ public:
     declare_parameter("debug_runtime_metrics", true);
     declare_parameter("enable_video_recording", false);
     declare_parameter("publish_pose_only_when_tracking_ok", true);
+    declare_parameter("min_pose_publish_inliers", 15);
+    declare_parameter("min_pose_publish_tracked_mappoints", 15);
     declare_parameter("max_image_queue_size", 2);
     declare_parameter("max_imu_queue_size", 500);
     declare_parameter("drop_stale_images", true);
@@ -156,6 +158,10 @@ public:
       get_parameter("enable_video_recording").as_bool();
     publish_pose_only_when_tracking_ok_ =
       get_parameter("publish_pose_only_when_tracking_ok").as_bool();
+    min_pose_publish_inliers_ =
+      get_parameter("min_pose_publish_inliers").as_int();
+    min_pose_publish_tracked_mappoints_ =
+      get_parameter("min_pose_publish_tracked_mappoints").as_int();
     max_image_queue_size_ =
       get_parameter("max_image_queue_size").as_int();
     max_imu_queue_size_ =
@@ -191,11 +197,13 @@ public:
     RCLCPP_INFO(
       get_logger(),
       "Runtime controls: debug_runtime_metrics=%d enable_video_recording=%d "
-      "publish_pose_only_when_tracking_ok=%d max_image_queue_size=%ld "
+      "publish_pose_only_when_tracking_ok=%d min_pose_publish_inliers=%ld "
+      "min_pose_publish_tracked_mappoints=%ld max_image_queue_size=%ld "
       "max_imu_queue_size=%ld drop_stale_images=%d max_image_age_ms=%.3f",
       debug_runtime_metrics_ ? 1 : 0,
       enable_video_recording_ ? 1 : 0,
       publish_pose_only_when_tracking_ok_ ? 1 : 0,
+      min_pose_publish_inliers_, min_pose_publish_tracked_mappoints_,
       max_image_queue_size_, max_imu_queue_size_,
       drop_stale_images_ ? 1 : 0, max_image_age_ms_);
 
@@ -540,7 +548,8 @@ private:
       "settings_file=%s cam_imu_time_offset=%.9f orb_time_offset_mode=%s "
       "yaml_imu_frequency=%.3f debug_expected_imu_rate_hz=%.3f "
       "debug_runtime_metrics=%d enable_video_recording=%d "
-      "publish_pose_only_when_tracking_ok=%d max_image_queue_size=%ld "
+      "publish_pose_only_when_tracking_ok=%d min_pose_publish_inliers=%ld "
+      "min_pose_publish_tracked_mappoints=%ld max_image_queue_size=%ld "
       "max_imu_queue_size=%ld drop_stale_images=%d max_image_age_ms=%.3f "
       "imu_accel_axis_order=%s imu_accel_scale=(%.3f,%.3f,%.3f) "
       "imu_gyro_axis_order=%s imu_gyro_scale=(%.3f,%.3f,%.3f)",
@@ -550,6 +559,7 @@ private:
       debug_expected_imu_rate_hz_, debug_runtime_metrics_ ? 1 : 0,
       enable_video_recording_ ? 1 : 0,
       publish_pose_only_when_tracking_ok_ ? 1 : 0,
+      min_pose_publish_inliers_, min_pose_publish_tracked_mappoints_,
       max_image_queue_size_, max_imu_queue_size_,
       drop_stale_images_ ? 1 : 0, max_image_age_ms_,
       imu_accel_axis_order_.c_str(),
@@ -828,10 +838,12 @@ private:
     RCLCPP_INFO(
       get_logger(),
       "[orb_pose_gate] tracking_state=%s imu_initialized=%d "
-      "reset_count=%lu has_pose=%d publish_pose=%d reason=%s",
+      "reset_count=%lu has_pose=%d num_inliers=%d "
+      "num_tracked_mappoints=%d publish_pose=%d reason=%s",
       tracking_state_to_string(state.tracking_state).c_str(),
       state.imu_initialized ? 1 : 0, state.reset_count,
-      state.has_pose ? 1 : 0, publish_pose ? 1 : 0, reason.c_str());
+      state.has_pose ? 1 : 0, state.num_inliers,
+      state.num_tracked_mappoints, publish_pose ? 1 : 0, reason.c_str());
   }
 
   void write_debug_track(
@@ -1297,6 +1309,17 @@ private:
                !is_tracking_ok_state(state.tracking_state)) {
       publish_pose = false;
       gate_reason = "tracking_not_ok";
+    } else if (min_pose_publish_inliers_ >= 0 &&
+               state.num_inliers >= 0 &&
+               state.num_inliers < min_pose_publish_inliers_) {
+      publish_pose = false;
+      gate_reason = "low_inliers";
+    } else if (min_pose_publish_tracked_mappoints_ >= 0 &&
+               state.num_tracked_mappoints >= 0 &&
+               state.num_tracked_mappoints <
+               min_pose_publish_tracked_mappoints_) {
+      publish_pose = false;
+      gate_reason = "low_tracked_mappoints";
     }
     write_debug_pose_gate(state, publish_pose, gate_reason);
     if (!publish_pose) {
@@ -1426,6 +1449,8 @@ private:
   bool debug_runtime_metrics_{true};
   bool enable_video_recording_{false};
   bool publish_pose_only_when_tracking_ok_{true};
+  int64_t min_pose_publish_inliers_{15};
+  int64_t min_pose_publish_tracked_mappoints_{15};
   int64_t max_image_queue_size_{2};
   int64_t max_imu_queue_size_{500};
   bool drop_stale_images_{true};

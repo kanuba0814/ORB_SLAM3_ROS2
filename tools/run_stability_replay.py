@@ -15,8 +15,6 @@ import time
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 from parse_runtime_orb_log import parse_runtime_log, render_markdown
 
 
@@ -215,11 +213,19 @@ def read_camera_fps(settings_file: Path) -> float | None:
 
 
 def read_qos_override_topics(qos_path: Path) -> list[str]:
-    with qos_path.open("r", encoding="utf-8") as handle:
-        data = yaml.safe_load(handle)
-    if not isinstance(data, dict):
-        raise ValueError(f"QoS override file is not a YAML mapping: {qos_path}")
-    topics = sorted(str(topic) for topic in data)
+    topics: list[str] = []
+    for raw_line in qos_path.read_text(encoding="utf-8").splitlines():
+        line = raw_line.rstrip()
+        if not line or line.lstrip().startswith("#"):
+            continue
+        if line.startswith((" ", "\t")):
+            continue
+        if ":" not in line:
+            raise ValueError(f"QoS override has invalid top-level line: {line}")
+        topic = line.split(":", 1)[0].strip().strip("'\"")
+        if topic:
+            topics.append(topic)
+    topics = sorted(topics)
     topic_set = set(topics)
     if topic_set != REQUIRED_QOS_OVERRIDE_TOPICS:
         raise ValueError(

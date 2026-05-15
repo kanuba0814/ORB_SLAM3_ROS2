@@ -420,6 +420,57 @@ def main() -> int:
             "reset_count_after_init=1",
         )
 
+        stability_metric_failures: tuple[tuple[str, str, Any, str], ...] = (
+            ("low_ok_ratio", "ok_ratio_after_init", 0.89, "ok_ratio_after_init=0.89"),
+            (
+                "long_lost_streak",
+                "max_lost_streak_sec_after_init",
+                5.0,
+                "max_lost_streak_sec_after_init=5.0",
+            ),
+            (
+                "reset_last_60",
+                "reset_delta_last_60_sec",
+                1,
+                "reset_delta_last_60_sec=1",
+            ),
+            ("low_keyframes", "final_keyframes", 19, "final_keyframes=19"),
+            (
+                "low_tracked_mappoints",
+                "median_tracked_map_points_after_init",
+                79.0,
+                "median_tracked_map_points_after_init=79.0",
+            ),
+            (
+                "low_inliers",
+                "median_inliers_after_init",
+                49.0,
+                "median_inliers_after_init=49.0",
+            ),
+            (
+                "stale_processed_image",
+                "processed_image_age_ms.p95",
+                150.0,
+                "processed_image_age_ms.p95=150.0",
+            ),
+            ("image_queue_growth", "img_buf_size_max", 3, "img_buf_size_max=3"),
+            (
+                "uncontrolled_backlog",
+                "controlled_backlog_pass",
+                False,
+                "controlled_backlog_pass=False",
+            ),
+        )
+        for name, key, value, expected_text in stability_metric_failures:
+            aggregate = base_aggregate()
+            run = aggregate["runs"][0]
+            if "." in key:
+                first, second = key.split(".", 1)
+                run[first][second] = value
+            else:
+                run[key] = value
+            expect_failure(root, name, aggregate, expected_text)
+
         imu_window_p50_jump = base_aggregate()
         imu_window_p50_jump["runs"][0]["image_to_last_imu_ms"]["p50"] = 30.0
         expect_failure(

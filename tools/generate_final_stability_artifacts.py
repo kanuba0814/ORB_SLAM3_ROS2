@@ -779,6 +779,41 @@ def render_decision(aggregate: dict[str, Any], kept_commits: list[str], risks: l
     ])
 
 
+def render_patch_summary(
+    aggregate: dict[str, Any],
+    kept_commits: list[str],
+    excluded_hypotheses: list[str],
+    risks: list[str],
+) -> str:
+    kept = "\n".join(f"- {item}" for item in kept_commits)
+    excluded = "\n".join(f"- {item}" for item in excluded_hypotheses)
+    risk_lines = "\n".join(f"- {item}" for item in risks)
+    return "\n".join([
+        "# Final Patch Summary",
+        "",
+        "## Accepted Replay Evidence",
+        "",
+        f"- label: `{aggregate.get('label')}`",
+        f"- bag: `{aggregate.get('bag_path')}`",
+        f"- run_count: `{aggregate.get('run_count')}`",
+        f"- pass_count: `{aggregate.get('pass_count')}`",
+        f"- all_passed: `{aggregate.get('all_passed')}`",
+        "",
+        "## Kept Changes",
+        "",
+        kept,
+        "",
+        "## Excluded Hypotheses",
+        "",
+        excluded,
+        "",
+        "## Remaining Risks",
+        "",
+        risk_lines,
+        "",
+    ])
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("aggregate_json", type=Path)
@@ -842,9 +877,12 @@ def main() -> int:
         encoding="utf-8",
     )
     (args.output_dir / "final_patch_summary.md").write_text(
-        "# Final Patch Summary\n\n"
-        + "\n".join(f"- {item}" for item in args.kept_commit)
-        + "\n",
+        render_patch_summary(
+            aggregate,
+            args.kept_commit,
+            args.excluded_hypothesis,
+            args.risk,
+        ),
         encoding="utf-8",
     )
     print(f"validated latest bag: {latest_bag}")

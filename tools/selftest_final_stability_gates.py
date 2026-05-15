@@ -207,6 +207,20 @@ def expect_success(root: Path, name: str, aggregate: dict[str, Any]) -> None:
     ):
         if snippet not in report:
             raise AssertionError(f"{name} final report is missing {snippet}")
+    patch_summary = (output_dir / "final_patch_summary.md").read_text(
+        encoding="utf-8"
+    )
+    for snippet in (
+        "## Accepted Replay Evidence",
+        "## Kept Changes",
+        "## Excluded Hypotheses",
+        "## Remaining Risks",
+        "run_count: `3`",
+        "pass_count: `3`",
+        "all_passed: `True`",
+    ):
+        if snippet not in patch_summary:
+            raise AssertionError(f"{name} patch summary is missing {snippet}")
 
 
 def expect_failure(

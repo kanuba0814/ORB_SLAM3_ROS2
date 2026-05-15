@@ -128,12 +128,9 @@ public:
     declare_parameter("debug_runtime_metrics", true);
     declare_parameter("enable_video_recording", false);
     declare_parameter("publish_pose_only_when_tracking_ok", true);
-    declare_parameter("min_pose_publish_inliers", 15);
-    declare_parameter("min_pose_publish_tracked_mappoints", 15);
-    declare_parameter("max_image_queue_size", 2);
+    declare_parameter("min_pose_publish_inliers", 0);
+    declare_parameter("min_pose_publish_tracked_mappoints", 0);
     declare_parameter("max_imu_queue_size", 500);
-    declare_parameter("drop_stale_images", true);
-    declare_parameter("max_image_age_ms", 200.0);
     declare_parameter("orb_time_offset_mode", "legacy_warn");
     declare_parameter("debug_expected_imu_rate_hz", 0.0);
     declare_parameter("imu_accel_scale_x", 1.0);
@@ -162,12 +159,8 @@ public:
       get_parameter("min_pose_publish_inliers").as_int();
     min_pose_publish_tracked_mappoints_ =
       get_parameter("min_pose_publish_tracked_mappoints").as_int();
-    max_image_queue_size_ =
-      get_parameter("max_image_queue_size").as_int();
     max_imu_queue_size_ =
       get_parameter("max_imu_queue_size").as_int();
-    drop_stale_images_ = get_parameter("drop_stale_images").as_bool();
-    max_image_age_ms_ = get_parameter("max_image_age_ms").as_double();
     orb_time_offset_mode_ = get_parameter("orb_time_offset_mode").as_string();
     debug_expected_imu_rate_hz_ =
       get_parameter("debug_expected_imu_rate_hz").as_double();
@@ -198,14 +191,13 @@ public:
       get_logger(),
       "Runtime controls: debug_runtime_metrics=%d enable_video_recording=%d "
       "publish_pose_only_when_tracking_ok=%d min_pose_publish_inliers=%ld "
-      "min_pose_publish_tracked_mappoints=%ld max_image_queue_size=%ld "
-      "max_imu_queue_size=%ld drop_stale_images=%d max_image_age_ms=%.3f",
+      "min_pose_publish_tracked_mappoints=%ld max_imu_queue_size=%ld "
+      "image_queue=size-1-latest-only",
       debug_runtime_metrics_ ? 1 : 0,
       enable_video_recording_ ? 1 : 0,
       publish_pose_only_when_tracking_ok_ ? 1 : 0,
       min_pose_publish_inliers_, min_pose_publish_tracked_mappoints_,
-      max_image_queue_size_, max_imu_queue_size_,
-      drop_stale_images_ ? 1 : 0, max_image_age_ms_);
+      max_imu_queue_size_);
 
     // define callback groups
     image_callback_group_ =
@@ -549,8 +541,8 @@ private:
       "yaml_imu_frequency=%.3f debug_expected_imu_rate_hz=%.3f "
       "debug_runtime_metrics=%d enable_video_recording=%d "
       "publish_pose_only_when_tracking_ok=%d min_pose_publish_inliers=%ld "
-      "min_pose_publish_tracked_mappoints=%ld max_image_queue_size=%ld "
-      "max_imu_queue_size=%ld drop_stale_images=%d max_image_age_ms=%.3f "
+      "min_pose_publish_tracked_mappoints=%ld max_imu_queue_size=%ld "
+      "image_queue=size-1-latest-only "
       "imu_accel_axis_order=%s imu_accel_scale=(%.3f,%.3f,%.3f) "
       "imu_gyro_axis_order=%s imu_gyro_scale=(%.3f,%.3f,%.3f)",
       sensor_type_param.c_str(), image_topic_.c_str(), imu_topic_.c_str(),
@@ -560,8 +552,7 @@ private:
       enable_video_recording_ ? 1 : 0,
       publish_pose_only_when_tracking_ok_ ? 1 : 0,
       min_pose_publish_inliers_, min_pose_publish_tracked_mappoints_,
-      max_image_queue_size_, max_imu_queue_size_,
-      drop_stale_images_ ? 1 : 0, max_image_age_ms_,
+      max_imu_queue_size_,
       imu_accel_axis_order_.c_str(),
       imu_accel_scale_[0], imu_accel_scale_[1], imu_accel_scale_[2],
       imu_gyro_axis_order_.c_str(), imu_gyro_scale_[0], imu_gyro_scale_[1],
@@ -1059,14 +1050,14 @@ private:
     msg_out->header.frame_id = "base_link";
     orb_image_publisher_->publish(*msg_out);
 
-    // Push to buffer; SyncWithImu thread will consume
+    // Size-1 latest-only image queue (zang09 / official ORB-SLAM3 ROS_inertial pattern):
+    // if a previous image is still pending consumption, drop it in favour of the
+    // freshest one. Never block on dwell time.
     {
       std::lock_guard<std::mutex> lock(buf_mutex_img_);
-      if (max_image_queue_size_ > 0) {
-        while (static_cast<int64_t>(img_buf_.size()) >= max_image_queue_size_) {
-          img_buf_.pop();
-          dropped_img_count_++;
-        }
+      if (!img_buf_.empty()) {
+        img_buf_.pop();
+        dropped_img_count_++;
       }
       img_buf_.push(QueuedImage{msg, receive_ns});
     }
@@ -1127,19 +1118,9 @@ private:
         static_cast<int64_t>(imgPtr->header.stamp.nanosec);
       tIm = effective_image_time(image_time);
 
-      if (drop_stale_images_ &&
-          metrics.wait_for_imu_ms > max_image_age_ms_) {
-        dropped_img_count_++;
-        metrics.track_begin_steady_ns = frame_begin_ns;
-        metrics.track_end_steady_ns = frame_begin_ns;
-        metrics.image_age_at_track_begin_ms = metrics.wait_for_imu_ms;
-        metrics.image_age_at_track_end_ms = metrics.wait_for_imu_ms;
-        metrics.processed_image_age_ms = metrics.wait_for_imu_ms;
-        write_debug_track(image_header_ns, image_time, tIm, {},
-                          false, "stale_image", metrics);
-        write_debug_queue_1hz(metrics.processed_image_age_ms);
-        continue;
-      }
+      // No dwell-based image drop here: the size-1 image_callback already keeps
+      // only the freshest frame, matching the ORB-SLAM3 official ROS_inertial
+      // example. Continuous frame stream is required for mono initialisation.
 
       const int64_t cv_begin_ns = steady_now_ns();
       cv::Mat imageFrame = get_image(imgPtr);
@@ -1449,12 +1430,9 @@ private:
   bool debug_runtime_metrics_{true};
   bool enable_video_recording_{false};
   bool publish_pose_only_when_tracking_ok_{true};
-  int64_t min_pose_publish_inliers_{15};
-  int64_t min_pose_publish_tracked_mappoints_{15};
-  int64_t max_image_queue_size_{2};
+  int64_t min_pose_publish_inliers_{0};
+  int64_t min_pose_publish_tracked_mappoints_{0};
   int64_t max_imu_queue_size_{500};
-  bool drop_stale_images_{true};
-  double max_image_age_ms_{200.0};
   std::string orb_time_offset_mode_{"legacy_warn"};
   double debug_expected_imu_rate_hz_{0.0};
   double imu_accel_scale_[3]{1.0, 1.0, 1.0};

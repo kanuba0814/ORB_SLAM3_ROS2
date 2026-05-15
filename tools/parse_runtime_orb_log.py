@@ -26,6 +26,8 @@ TAGS = {
 }
 OK_STATES = {"OK", "OK_KLT"}
 BAD_STATES = {"RECENTLY_LOST", "LOST", "NOT_INITIALIZED"}
+POSE_PUBLISH_MIN_INLIERS = 15
+POSE_PUBLISH_MIN_TRACKED_MAPPOINTS = 15
 
 
 def parse_value(value: str) -> Any:
@@ -90,6 +92,33 @@ def get_time(record: dict[str, Any]) -> float | None:
         if isinstance(value, (int, float)) and math.isfinite(float(value)):
             return float(value)
     return None
+
+
+def numeric_field(record: dict[str, Any], key: str) -> float | None:
+    value = record.get(key)
+    if isinstance(value, (int, float)) and math.isfinite(float(value)):
+        return float(value)
+    return None
+
+
+def invalid_pose_publish(record: dict[str, Any]) -> bool:
+    state = str(record.get("tracking_state", "UNKNOWN"))
+    if state not in OK_STATES:
+        return True
+
+    reason = str(record.get("reason", ""))
+    if reason and reason != "ok":
+        return True
+
+    inliers = numeric_field(record, "num_inliers")
+    tracked_mappoints = numeric_field(record, "num_tracked_mappoints")
+    if inliers is None or tracked_mappoints is None:
+        return True
+    if inliers < POSE_PUBLISH_MIN_INLIERS:
+        return True
+    if tracked_mappoints < POSE_PUBLISH_MIN_TRACKED_MAPPOINTS:
+        return True
+    return False
 
 
 def parse_runtime_log(path: Path) -> dict[str, Any]:
@@ -178,8 +207,7 @@ def parse_runtime_log(path: Path) -> dict[str, Any]:
     pose_publish_blocked_count = 0
     for record in pose_gate:
         publish = int(record.get("publish_pose", 0) or 0) == 1
-        state = str(record.get("tracking_state", "UNKNOWN"))
-        if publish and state not in OK_STATES:
+        if publish and invalid_pose_publish(record):
             invalid_pose_publish_count += 1
         if not publish:
             pose_publish_blocked_count += 1

@@ -12,6 +12,7 @@ from argparse import Namespace
 from pathlib import Path
 from typing import Any
 
+import parse_runtime_orb_log
 import run_stability_replay
 
 
@@ -261,9 +262,81 @@ def remove_command_arg(run: dict[str, Any], value: str) -> None:
     run["command"] = [item for item in run["command"] if item != value]
 
 
+def expect_pose_gate_invalid_count(
+    root: Path,
+    name: str,
+    pose_gate_line: str,
+    expected_count: int,
+) -> None:
+    log_path = root / f"{name}.log"
+    log_path.write_text(pose_gate_line + "\n", encoding="utf-8")
+    summary = parse_runtime_orb_log.parse_runtime_log(log_path)
+    actual = summary["invalid_pose_publish_count"]
+    if actual != expected_count:
+        raise AssertionError(
+            f"{name} invalid_pose_publish_count={actual}, "
+            f"expected {expected_count}"
+        )
+
+
+def test_pose_gate_parser_quality(root: Path) -> None:
+    def line(
+        state: str,
+        inliers: str,
+        tracked_mappoints: str,
+        publish: str = "1",
+        reason: str = "ok",
+    ) -> str:
+        return (
+            "[orb_pose_gate] tracking_state="
+            f"{state} imu_initialized=1 reset_count=0 has_pose=1 "
+            f"num_inliers={inliers} num_tracked_mappoints={tracked_mappoints} "
+            f"publish_pose={publish} reason={reason}"
+        )
+
+    expect_pose_gate_invalid_count(
+        root,
+        "pose_gate_ok_quality_publish",
+        line("OK", "15", "15"),
+        0,
+    )
+    expect_pose_gate_invalid_count(
+        root,
+        "pose_gate_low_inlier_publish",
+        line("OK", "14", "20"),
+        1,
+    )
+    expect_pose_gate_invalid_count(
+        root,
+        "pose_gate_low_mappoint_publish",
+        line("OK", "20", "14"),
+        1,
+    )
+    expect_pose_gate_invalid_count(
+        root,
+        "pose_gate_recently_lost_publish",
+        line("RECENTLY_LOST", "120", "120"),
+        1,
+    )
+    expect_pose_gate_invalid_count(
+        root,
+        "pose_gate_blocked_low_quality",
+        line("OK", "0", "0", publish="0", reason="low_inliers"),
+        0,
+    )
+    expect_pose_gate_invalid_count(
+        root,
+        "pose_gate_missing_quality_publish",
+        line("OK", "nan", "20"),
+        1,
+    )
+
+
 def main() -> int:
     with tempfile.TemporaryDirectory(prefix="orb_final_gate_selftest_") as tmp:
         root = Path(tmp)
+        test_pose_gate_parser_quality(root)
+
         positive = base_aggregate()
         expect_success(root, "positive", positive)
 

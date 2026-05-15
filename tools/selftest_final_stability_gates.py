@@ -190,6 +190,9 @@ def expect_success(root: Path, name: str, aggregate: dict[str, Any]) -> None:
         "- qos_override_topics:",
         "Backlog pass",
         "Pass | Timed out",
+        "### Config Snapshot",
+        "Camera.fps: `",
+        "Tracking.FramesToResetIMU: `",
     ):
         if snippet not in report:
             raise AssertionError(f"{name} final report is missing {snippet}")

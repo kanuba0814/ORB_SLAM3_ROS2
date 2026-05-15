@@ -34,6 +34,23 @@ REQUIRED_QOS_OVERRIDE_TOPICS = {"/sync/image_raw", "/sync/imu", "/sync/imu_batch
 CAMERA_FPS_RE = re.compile(
     r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
 )
+CONFIG_SNAPSHOT_KEYS = (
+    "Camera.fps",
+    "ORBextractor.nFeatures",
+    "ORBextractor.iniThFAST",
+    "ORBextractor.minThFAST",
+    "IMU.Frequency",
+    "IMU.NoiseGyro",
+    "IMU.NoiseAcc",
+    "IMU.GyroWalk",
+    "IMU.AccWalk",
+    "IMU.InsertKFsWhenLost",
+    "LocalMapping.ResetOnSmallMotionBeforeInertialBA2",
+    "LocalMapping.ImuMonoInitMinTime",
+    "Tracking.FramesToResetIMU",
+    "Tracking.ResetActiveMapBeforeInertialBA2",
+    "Tracking.MinInliersImuMonoPostInit",
+)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -89,6 +106,17 @@ def read_camera_fps(settings_file: Path) -> float | None:
         if match:
             return float(match.group(1))
     return None
+
+
+def read_config_snapshot(settings_file: Path) -> dict[str, str]:
+    key_pattern = "|".join(re.escape(key) for key in CONFIG_SNAPSHOT_KEYS)
+    scalar_re = re.compile(rf"^\s*({key_pattern})\s*:\s*([^#]+?)\s*(?:#.*)?$")
+    values: dict[str, str] = {}
+    for line in settings_file.read_text(encoding="utf-8").splitlines():
+        match = scalar_re.match(line)
+        if match:
+            values[match.group(1)] = match.group(2).strip()
+    return {key: values.get(key, "(missing)") for key in CONFIG_SNAPSHOT_KEYS}
 
 
 def require_settings_match_preflight(settings_file: Path, preflight: dict[str, Any]) -> None:
@@ -633,6 +661,10 @@ def render_report(
     commit_lines = "\n".join(f"- {item}" for item in kept_commits)
     excluded_lines = "\n".join(f"- {item}" for item in excluded_hypotheses)
     risk_lines = "\n".join(f"- {item}" for item in risks)
+    config_snapshot = "\n".join(
+        f"- {key}: `{value}`"
+        for key, value in read_config_snapshot(settings_path).items()
+    )
 
     return "\n".join([
         "# Final ORB Stability Report",
@@ -674,6 +706,10 @@ def render_report(
         "",
         f"- source settings: `{settings_path}`",
         f"- copied to: `best_config.yaml`",
+        "",
+        "### Config Snapshot",
+        "",
+        config_snapshot,
         "",
         "## Replay Metrics",
         "",

@@ -77,8 +77,8 @@ IMU.InsertKFsWhenLost: 0
 # estimation; avoid turning the pre-BA2 small-motion guard into a reset loop.
 LocalMapping.ResetOnSmallMotionBeforeInertialBA2: 0
 # Delay first inertial acceptance so the H30 replay does not lock onto a weak
-# two-second monocular bootstrap that later resets under ROS2 wrapper replay.
-LocalMapping.ImuMonoInitMinTime: 4.0
+# early monocular bootstrap that later resets under ROS2 wrapper replay.
+LocalMapping.ImuMonoInitMinTime: 8.0
 # Keep H30 wrapper replay in the visual recovery path for the full fixed bag.
 # ORB_SLAM3's ResetFrameIMU hook is a TODO and the IMU-prediction handoff is
 # unstable on this dataset, so put the gate beyond any replay frame id.

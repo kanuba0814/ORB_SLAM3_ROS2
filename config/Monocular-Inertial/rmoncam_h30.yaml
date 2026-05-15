@@ -86,9 +86,9 @@ Tracking.FramesToResetIMU: 100000
 # Do not clear a usable H30 map on one transient low-inlier frame before BA2.
 # Keep RECENTLY_LOST recovery alive; the final stability gate rejects bad pose.
 Tracking.ResetActiveMapBeforeInertialBA2: 0
-# Let ORB keep the map through brief post-init 5-14 inlier frames; the ROS2
+# Let ORB keep the map through post-init visual dropout frames; the ROS2
 # wrapper gates publication below 15 inliers/tracked map points.
-Tracking.MinInliersImuMonoPostInit: 5
+Tracking.MinInliersImuMonoPostInit: 0
 
 # IMU noise parameters  (with ~10x safety factor applied)
 # 2x was too tight for real-world USB IMU → scale estimation failure.

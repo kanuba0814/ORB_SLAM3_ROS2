@@ -180,6 +180,15 @@ def expect_success(root: Path, name: str, aggregate: dict[str, Any]) -> None:
     best_config = output_dir / "best_config.yaml"
     if best_config.read_text(encoding="utf-8") != SETTINGS.read_text(encoding="utf-8"):
         raise AssertionError(f"{name} best_config.yaml does not match settings")
+    report = (output_dir / "final_stability_report.md").read_text(encoding="utf-8")
+    for snippet in (
+        "- image_topic_count:",
+        "- image_topic_fps_span:",
+        "- imu_topic_count:",
+        "- imu_topic_fps_span:",
+    ):
+        if snippet not in report:
+            raise AssertionError(f"{name} final report is missing {snippet}")
 
 
 def expect_failure(

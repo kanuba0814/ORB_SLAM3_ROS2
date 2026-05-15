@@ -633,8 +633,14 @@ def render_report(
         f"- settings_camera_fps: `{preflight.get('settings_camera_fps')}`",
         f"- settings_file: `{preflight.get('settings_file')}`",
         f"- replay_topics: `{', '.join(preflight.get('replay_topics', []))}`",
+        "- image_topic_count: "
+        f"`{preflight.get('image_topic_stats', {}).get('count')}`",
         "- image_topic_fps_span: "
         f"`{preflight.get('image_topic_stats', {}).get('fps_span')}`",
+        "- imu_topic_count: "
+        f"`{preflight.get('imu_topic_stats', {}).get('count')}`",
+        "- imu_topic_fps_span: "
+        f"`{preflight.get('imu_topic_stats', {}).get('fps_span')}`",
         f"- timeout_sec: `{preflight.get('timeout_sec')}`",
         f"- required_timeout_sec: `{preflight.get('required_timeout_sec')}`",
         f"- start_offset_sec: `{preflight.get('start_offset_sec')}`",

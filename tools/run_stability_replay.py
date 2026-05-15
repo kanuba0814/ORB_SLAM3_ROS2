@@ -15,6 +15,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from parse_runtime_orb_log import parse_runtime_log, render_markdown
 
 
@@ -35,6 +37,7 @@ ALLOWED_REPLAY_TOPICS = {
 ALLOWED_IMAGE_TOPICS = {"/sync/image_raw"}
 ALLOWED_IMU_TOPICS = {"/sync/imu", "/sync/imu_batch"}
 BANNED_SELECTED_TOPICS = {"/image_raw", "/imu/data_raw", "/imu/raw_hw"}
+REQUIRED_QOS_OVERRIDE_TOPICS = {"/sync/image_raw", "/sync/imu", "/sync/imu_batch"}
 
 
 def parse_topic_csv(value: str) -> list[str]:
@@ -211,6 +214,21 @@ def read_camera_fps(settings_file: Path) -> float | None:
     return None
 
 
+def read_qos_override_topics(qos_path: Path) -> list[str]:
+    with qos_path.open("r", encoding="utf-8") as handle:
+        data = yaml.safe_load(handle)
+    if not isinstance(data, dict):
+        raise ValueError(f"QoS override file is not a YAML mapping: {qos_path}")
+    topics = sorted(str(topic) for topic in data)
+    topic_set = set(topics)
+    if topic_set != REQUIRED_QOS_OVERRIDE_TOPICS:
+        raise ValueError(
+            "QoS override topics must exactly match sync bag topics: "
+            f"expected={sorted(REQUIRED_QOS_OVERRIDE_TOPICS)}, actual={topics}"
+        )
+    return topics
+
+
 def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]:
     if not bag_path.exists():
         raise FileNotFoundError(f"bag path does not exist: {bag_path}")
@@ -269,6 +287,7 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
     qos_path = Path(args.qos_profile_overrides_path).expanduser()
     if args.qos_profile_overrides_path and not qos_path.exists():
         raise FileNotFoundError(f"QoS override file does not exist: {qos_path}")
+    qos_override_topics = read_qos_override_topics(qos_path) if args.qos_profile_overrides_path else []
 
     try:
         rate = max(float(args.rate), 1e-6)
@@ -331,6 +350,7 @@ def preflight_replay(args: argparse.Namespace, bag_path: Path) -> dict[str, Any]
         "qos_profile_overrides_path": (
             str(qos_path) if args.qos_profile_overrides_path else ""
         ),
+        "qos_override_topics": qos_override_topics,
     }
 
 

@@ -186,6 +186,7 @@ def expect_success(root: Path, name: str, aggregate: dict[str, Any]) -> None:
         "- image_topic_fps_span:",
         "- imu_topic_count:",
         "- imu_topic_fps_span:",
+        "- qos_override_topics:",
         "Backlog pass",
     ):
         if snippet not in report:
@@ -293,6 +294,27 @@ def main() -> int:
             "missing_replay_topics",
             missing_topics,
             "preflight is missing replay_topics",
+        )
+
+        missing_qos_topics = base_aggregate()
+        del missing_qos_topics["preflight"]["qos_override_topics"]
+        expect_failure(
+            root,
+            "missing_qos_override_topics",
+            missing_qos_topics,
+            "preflight is missing qos_override_topics",
+        )
+
+        wrong_qos_topics = base_aggregate()
+        wrong_qos_topics["preflight"]["qos_override_topics"] = [
+            "/sync/image_raw",
+            "/sync/imu",
+        ]
+        expect_failure(
+            root,
+            "wrong_qos_override_topics",
+            wrong_qos_topics,
+            "preflight QoS override topics must exactly match sync bag topics",
         )
 
         missing_imu_stats = base_aggregate()

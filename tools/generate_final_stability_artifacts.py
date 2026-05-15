@@ -30,6 +30,7 @@ ALLOWED_REPLAY_TOPICS = {
     "/rosout",
 }
 BANNED_SELECTED_TOPICS = {"/image_raw", "/imu/data_raw", "/imu/raw_hw"}
+REQUIRED_QOS_OVERRIDE_TOPICS = {"/sync/image_raw", "/sync/imu", "/sync/imu_batch"}
 CAMERA_FPS_RE = re.compile(
     r"^\s*Camera\.fps\s*:\s*([0-9]+(?:\.[0-9]+)?)\s*(?:#.*)?$"
 )
@@ -177,6 +178,16 @@ def require_final_replay_preflight(aggregate: dict[str, Any]) -> dict[str, Any]:
     for key in required_paths:
         if not isinstance(preflight.get(key), str) or not preflight.get(key):
             raise ValueError(f"preflight is missing {key}")
+    qos_override_topics = preflight.get("qos_override_topics")
+    if not isinstance(qos_override_topics, list) or not qos_override_topics:
+        raise ValueError("preflight is missing qos_override_topics")
+    qos_override_topic_set = {str(topic) for topic in qos_override_topics}
+    if qos_override_topic_set != REQUIRED_QOS_OVERRIDE_TOPICS:
+        raise ValueError(
+            "preflight QoS override topics must exactly match sync bag topics: "
+            f"expected={sorted(REQUIRED_QOS_OVERRIDE_TOPICS)}, "
+            f"actual={sorted(qos_override_topic_set)}"
+        )
     if preflight.get("settings_camera_fps") is None:
         raise ValueError("preflight is missing settings_camera_fps")
 
@@ -634,6 +645,7 @@ def render_report(
         f"- settings_camera_fps: `{preflight.get('settings_camera_fps')}`",
         f"- settings_file: `{preflight.get('settings_file')}`",
         f"- replay_topics: `{', '.join(preflight.get('replay_topics', []))}`",
+        f"- qos_override_topics: `{', '.join(preflight.get('qos_override_topics', []))}`",
         "- image_topic_count: "
         f"`{preflight.get('image_topic_stats', {}).get('count')}`",
         "- image_topic_fps_span: "

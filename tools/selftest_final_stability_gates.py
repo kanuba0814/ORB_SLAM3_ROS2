@@ -83,6 +83,7 @@ def base_run(run_index: int = 1) -> dict[str, Any]:
     return {
         "run_index": run_index,
         "elapsed_wall_sec": 100.0 + run_index,
+        "timed_out": False,
         "stability_pass": True,
         "returncode": 0,
         "errors": [],
@@ -276,6 +277,24 @@ def main() -> int:
             "missing_elapsed",
             missing_elapsed,
             "run 1 has invalid elapsed_wall_sec=None",
+        )
+
+        missing_timed_out = base_aggregate()
+        del missing_timed_out["runs"][0]["timed_out"]
+        expect_failure(
+            root,
+            "missing_timed_out",
+            missing_timed_out,
+            "run 1 is missing timed_out",
+        )
+
+        timed_out = base_aggregate()
+        timed_out["runs"][0]["timed_out"] = True
+        expect_failure(
+            root,
+            "timed_out",
+            timed_out,
+            "run 1 timed_out=True",
         )
 
         missing_v2_tags = base_aggregate()

@@ -510,6 +510,10 @@ def require_passing_aggregate(aggregate: dict[str, Any], min_runs: int) -> list[
             raise ValueError(
                 f"run {index} has invalid elapsed_wall_sec={elapsed_wall_sec}"
             )
+        if "timed_out" not in run:
+            raise ValueError(f"run {index} is missing timed_out")
+        if run.get("timed_out") is not False:
+            raise ValueError(f"run {index} timed_out={run.get('timed_out')}")
         if not run.get("stability_pass"):
             raise ValueError(f"run {index} has stability_pass={run.get('stability_pass')}")
         if int(run.get("returncode", 1) or 0) != 0:

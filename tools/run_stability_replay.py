@@ -96,6 +96,9 @@ def launch_command(args: argparse.Namespace, bag_path: Path) -> list[str]:
         f"enable_video_recording:={str(args.enable_video_recording).lower()}",
         "publish_pose_only_when_tracking_ok:="
         f"{str(args.publish_pose_only_when_tracking_ok).lower()}",
+        f"min_pose_publish_inliers:={args.min_pose_publish_inliers}",
+        "min_pose_publish_tracked_mappoints:="
+        f"{args.min_pose_publish_tracked_mappoints}",
         f"max_image_queue_size:={args.max_image_queue_size}",
         f"max_imu_queue_size:={args.max_imu_queue_size}",
         f"drop_stale_images:={str(args.drop_stale_images).lower()}",
@@ -529,6 +532,8 @@ def main() -> int:
         action=argparse.BooleanOptionalAction,
         default=True,
     )
+    parser.add_argument("--min-pose-publish-inliers", default="15")
+    parser.add_argument("--min-pose-publish-tracked-mappoints", default="15")
     parser.add_argument("--max-image-queue-size", default="2")
     parser.add_argument("--max-imu-queue-size", default="500")
     parser.add_argument("--drop-stale-images", action=argparse.BooleanOptionalAction, default=True)

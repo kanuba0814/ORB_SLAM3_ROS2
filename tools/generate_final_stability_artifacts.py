@@ -266,6 +266,8 @@ def require_ros2_wrapper_command(
         "debug_runtime_metrics": "true",
         "enable_video_recording": "false",
         "publish_pose_only_when_tracking_ok": "true",
+        "min_pose_publish_inliers": "15",
+        "min_pose_publish_tracked_mappoints": "15",
         "max_image_queue_size": "2",
         "max_imu_queue_size": "500",
         "drop_stale_images": "true",

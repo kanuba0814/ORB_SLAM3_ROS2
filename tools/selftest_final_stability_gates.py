@@ -46,6 +46,8 @@ def replay_args() -> Namespace:
         debug_runtime_metrics=True,
         enable_video_recording=False,
         publish_pose_only_when_tracking_ok=True,
+        min_pose_publish_inliers="15",
+        min_pose_publish_tracked_mappoints="15",
         max_image_queue_size="2",
         max_imu_queue_size="500",
         drop_stale_images=True,
@@ -315,6 +317,31 @@ def main() -> int:
             "missing_pose_gate_arg",
             missing_pose_gate,
             "publish_pose_only_when_tracking_ok:=true",
+        )
+
+        wrong_pose_inlier_gate = base_aggregate()
+        replace_command_arg(
+            wrong_pose_inlier_gate["runs"][0],
+            "min_pose_publish_inliers:=15",
+            "min_pose_publish_inliers:=0",
+        )
+        expect_failure(
+            root,
+            "wrong_pose_inlier_gate",
+            wrong_pose_inlier_gate,
+            "min_pose_publish_inliers:=15",
+        )
+
+        missing_pose_mappoint_gate = base_aggregate()
+        remove_command_arg(
+            missing_pose_mappoint_gate["runs"][0],
+            "min_pose_publish_tracked_mappoints:=15",
+        )
+        expect_failure(
+            root,
+            "missing_pose_mappoint_gate",
+            missing_pose_mappoint_gate,
+            "min_pose_publish_tracked_mappoints:=15",
         )
 
         rviz_enabled = base_aggregate()

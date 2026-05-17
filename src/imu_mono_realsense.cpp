@@ -141,6 +141,9 @@ public:
     declare_parameter("imu_gyro_scale_z", 1.0);
     declare_parameter("imu_accel_axis_order", "xyz");
     declare_parameter("imu_gyro_axis_order", "xyz");
+    declare_parameter("imu_warmup_enabled", true);
+    declare_parameter("imu_warmup_sec", 3.0);
+    declare_parameter("imu_warmup_max_gyro_degs", 5.0);
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
@@ -176,6 +179,10 @@ public:
       imu_accel_axis_order_, imu_accel_axis_index_, "imu_accel_axis_order");
     imu_gyro_axis_order_ = load_axis_order(
       imu_gyro_axis_order_, imu_gyro_axis_index_, "imu_gyro_axis_order");
+    imu_warmup_enabled_ = get_parameter("imu_warmup_enabled").as_bool();
+    imu_warmup_sec_ = get_parameter("imu_warmup_sec").as_double();
+    imu_warmup_max_gyro_radps_ =
+      get_parameter("imu_warmup_max_gyro_degs").as_double() * M_PI / 180.0;
     RCLCPP_INFO(get_logger(),
                 "Camera-IMU time offset: %.6f s (t_imu = t_cam + offset)",
                 cam_imu_time_offset_);
@@ -1258,8 +1265,48 @@ private:
         !std::isnan(msg.angular_velocity.x) &&
         !std::isnan(msg.angular_velocity.y) &&
         !std::isnan(msg.angular_velocity.z)) {
+      // hardening A: wrapper 层 warm-up gyro bias 减除（raw 帧，与 axis remap 解耦）
+      if (imu_warmup_enabled_ && !warmup_complete_) {
+        const double t_now = rclcpp::Time(msg.header.stamp).seconds();
+        if (warmup_t0_sec_ < 0.0) warmup_t0_sec_ = t_now;
+        const double gx = msg.angular_velocity.x;
+        const double gy = msg.angular_velocity.y;
+        const double gz = msg.angular_velocity.z;
+        const double gnorm = std::sqrt(gx*gx + gy*gy + gz*gz);
+        if (gnorm > imu_warmup_max_gyro_radps_) warmup_motion_detected_ = true;
+        warmup_gyro_sum_[0] += gx;
+        warmup_gyro_sum_[1] += gy;
+        warmup_gyro_sum_[2] += gz;
+        ++warmup_sample_count_;
+        if ((t_now - warmup_t0_sec_) >= imu_warmup_sec_) {
+          warmup_complete_ = true;
+          if (!warmup_motion_detected_ && warmup_sample_count_ > 0) {
+            for (int i = 0; i < 3; ++i)
+              gyro_bias_raw_[i] = warmup_gyro_sum_[i] /
+                                  static_cast<double>(warmup_sample_count_);
+            gyro_bias_valid_ = true;
+            RCLCPP_INFO(this->get_logger(),
+              "[imu_warmup] PASS bias_raw=[%.5f %.5f %.5f] rad/s "
+              "(%llu samples in %.2fs)",
+              gyro_bias_raw_[0], gyro_bias_raw_[1], gyro_bias_raw_[2],
+              static_cast<unsigned long long>(warmup_sample_count_),
+              t_now - warmup_t0_sec_);
+          } else {
+            RCLCPP_WARN(this->get_logger(),
+              "[imu_warmup] SKIP motion during warmup (|gyro| > %.2f deg/s); "
+              "falling back to no bias subtraction",
+              imu_warmup_max_gyro_radps_ * 180.0 / M_PI);
+          }
+        }
+      }
+      sensor_msgs::msg::Imu msg_corrected = msg;
+      if (gyro_bias_valid_) {
+        msg_corrected.angular_velocity.x -= gyro_bias_raw_[0];
+        msg_corrected.angular_velocity.y -= gyro_bias_raw_[1];
+        msg_corrected.angular_velocity.z -= gyro_bias_raw_[2];
+      }
       const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
-        std::make_shared<sensor_msgs::msg::Imu>(msg);
+        std::make_shared<sensor_msgs::msg::Imu>(msg_corrected);
       {
         std::lock_guard<std::mutex> lock(buf_mutex_imu_);
         if (max_imu_queue_size_ > 0) {
@@ -1441,6 +1488,17 @@ private:
   int imu_gyro_axis_index_[3]{0, 1, 2};
   std::string imu_accel_axis_order_{"xyz"};
   std::string imu_gyro_axis_order_{"xyz"};
+  // warm-up gyro bias 状态（hardening A，参见 debug_runs/fix_until_stable/210_*.md）
+  bool imu_warmup_enabled_{true};
+  double imu_warmup_sec_{3.0};
+  double imu_warmup_max_gyro_radps_{5.0 * M_PI / 180.0};
+  double gyro_bias_raw_[3]{0.0, 0.0, 0.0};
+  bool gyro_bias_valid_{false};
+  bool warmup_complete_{false};
+  bool warmup_motion_detected_{false};
+  double warmup_t0_sec_{-1.0};
+  uint64_t warmup_sample_count_{0};
+  double warmup_gyro_sum_[3]{0.0, 0.0, 0.0};
   double yaml_imu_frequency_{0.0};
   double observed_imu_rate_hz_{0.0};
   bool imu_yaml_warned_{false};

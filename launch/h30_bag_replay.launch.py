@@ -169,6 +169,21 @@ def generate_launch_description():
         DeclareLaunchArgument("imu_accel_axis_order", default_value="xyz"),
         DeclareLaunchArgument("imu_gyro_axis_order", default_value="xyz"),
         DeclareLaunchArgument(
+            "imu_warmup_enabled",
+            default_value="true",
+            description="Hardening A: enable wrapper-side warm-up gyro bias subtraction.",
+        ),
+        DeclareLaunchArgument(
+            "imu_warmup_sec",
+            default_value="3.0",
+            description="Warm-up window length in seconds (IMU stamp time).",
+        ),
+        DeclareLaunchArgument(
+            "imu_warmup_max_gyro_degs",
+            default_value="5.0",
+            description="Per-sample |gyro| threshold above which warm-up is aborted.",
+        ),
+        DeclareLaunchArgument(
             "duration",
             default_value="0.0",
             description="Playback duration in bag time. 0 means full bag.",
@@ -277,6 +292,18 @@ def generate_launch_description():
                 "imu_gyro_axis_order": ParameterValue(
                     LaunchConfiguration("imu_gyro_axis_order"),
                     value_type=str,
+                ),
+                "imu_warmup_enabled": ParameterValue(
+                    LaunchConfiguration("imu_warmup_enabled"),
+                    value_type=bool,
+                ),
+                "imu_warmup_sec": ParameterValue(
+                    LaunchConfiguration("imu_warmup_sec"),
+                    value_type=float,
+                ),
+                "imu_warmup_max_gyro_degs": ParameterValue(
+                    LaunchConfiguration("imu_warmup_max_gyro_degs"),
+                    value_type=float,
                 ),
             }],
         ),

@@ -102,7 +102,7 @@ You can record and play back rosbags with arguments to the launch file:
 Bags are recorded to the ```bags``` directory. The playbag_back argument shouldn't
 be a full path to the bag, just the name of it.
 
-For external rosbag2 datasets (for example under `/home/gxxl/slam_ws_v2/bags`),
+For external rosbag2 datasets (for example under `~/slam_ws_v2/bags`),
 use:
 ```sh
 ros2 launch orb_slam3_ros2 bag_orb.launch.py \

@@ -1,3 +1,13 @@
+> **Fork 说明（kanuba0814）**
+>
+> 这是 [gjcliff/ORB_SLAM3_ROS2](https://github.com/gjcliff/ORB_SLAM3_ROS2) 的 fork。上游提交保持原样，在其之上我增加了 108 个提交，用于让 ORB-SLAM3 在 **Yesense H30 IMU + USB 单目相机** 上稳定运行 mono-inertial：
+>
+> - IMU-相机线性插值同步、`SyncWithImu` 线程修复 IMU 数据丢失、支持预同步输入的启动文件；
+> - 修复 bag 回放中频繁 reset：延长 IMU 初始化窗口、预热期扣除陀螺零偏、对齐官方封装的图像队列、低内点 / 低质量位姿门控；
+> - H30 回放审计工具（`tools/`）和批量回放矩阵，逐项以“假设 → 修改 → 回放验证”提交，另附测试。
+>
+> 时间同步部分见 `cam-imu-sync` 仓库。上游仓库没有声明许可证，本 fork 仅用于展示个人修改。
+
 # ORB_SLAM3_ROS2
 Implementing ORB_SLAM3 in ROS 2 humble with some bonus features.
 

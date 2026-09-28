@@ -62,6 +62,27 @@ using std::placeholders::_1, std::placeholders::_2;
 
 static const int kSyncSleepMs = 1;  // SyncWithImu polling interval
 
+// InitGate phase. Gates the image buffer until ORB-SLAM3 IMU init has a
+// reasonable chance to succeed: complete gyro-bias warmup, observe sustained
+// motion, then start feeding frames.
+enum class InitGatePhase : int {
+  WARMUP = 0,
+  AWAIT_MOTION = 1,
+  TRACKING = 2,
+  IMU_READY = 3,
+};
+
+static const char *init_gate_phase_name(int phase)
+{
+  switch (static_cast<InitGatePhase>(phase)) {
+    case InitGatePhase::WARMUP:       return "WARMUP";
+    case InitGatePhase::AWAIT_MOTION: return "AWAIT_MOTION";
+    case InitGatePhase::TRACKING:     return "TRACKING";
+    case InitGatePhase::IMU_READY:    return "IMU_READY";
+  }
+  return "UNKNOWN";
+}
+
 static int64_t steady_now_ns()
 {
   return std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -144,6 +165,11 @@ public:
     declare_parameter("imu_warmup_enabled", true);
     declare_parameter("imu_warmup_sec", 3.0);
     declare_parameter("imu_warmup_max_gyro_degs", 5.0);
+    // InitGate: WARMUP -> AWAIT_MOTION -> TRACKING -> IMU_READY
+    declare_parameter("init_gate_enabled", true);
+    declare_parameter("init_motion_gyro_threshold_degs", 3.0);
+    declare_parameter("init_motion_sustained_sec", 0.3);
+    declare_parameter("init_await_motion_timeout_sec", 20.0);
 
     // get parameters
     sensor_type_param = get_parameter("sensor_type").as_string();
@@ -183,6 +209,21 @@ public:
     imu_warmup_sec_ = get_parameter("imu_warmup_sec").as_double();
     imu_warmup_max_gyro_radps_ =
       get_parameter("imu_warmup_max_gyro_degs").as_double() * M_PI / 180.0;
+    init_gate_enabled_ = get_parameter("init_gate_enabled").as_bool();
+    init_motion_gyro_threshold_radps_ =
+      get_parameter("init_motion_gyro_threshold_degs").as_double() * M_PI / 180.0;
+    init_motion_sustained_sec_ =
+      get_parameter("init_motion_sustained_sec").as_double();
+    init_await_motion_timeout_sec_ =
+      get_parameter("init_await_motion_timeout_sec").as_double();
+    RCLCPP_INFO(
+      get_logger(),
+      "[init_gate] config enabled=%d motion_thresh=%.2f deg/s "
+      "sustained=%.2fs await_timeout=%.1fs",
+      init_gate_enabled_ ? 1 : 0,
+      init_motion_gyro_threshold_radps_ * 180.0 / M_PI,
+      init_motion_sustained_sec_,
+      init_await_motion_timeout_sec_);
     RCLCPP_INFO(get_logger(),
                 "Camera-IMU time offset: %.6f s (t_imu = t_cam + offset)",
                 cam_imu_time_offset_);
@@ -1043,6 +1084,93 @@ private:
                 acc_mean[1], acc_mean[2]);
   }
 
+  // ── InitGate helpers ────────────────────────────────────────────
+  // Atomic phase store + structured log on transition. `t_sec` is bag-clock
+  // (IMU header stamp) for the WARMUP/AWAIT/TRACKING transitions; image stamp
+  // for the IMU_READY transition. `frame_id` is only meaningful for IMU_READY.
+  void transition_init_gate(InitGatePhase to, double t_sec,
+                            const char *reason, long unsigned int frame_id = 0)
+  {
+    const int prev = init_gate_phase_.load(std::memory_order_acquire);
+    const int next = static_cast<int>(to);
+    if (prev == next) return;
+    init_gate_phase_.store(next, std::memory_order_release);
+    init_gate_phase_start_sec_[next] = t_sec;
+    const double prev_start =
+      (prev >= 0 && prev < 4) ? init_gate_phase_start_sec_[prev] : -1.0;
+    const double prev_dur =
+      (prev_start > 0.0 && t_sec > prev_start) ? (t_sec - prev_start) : -1.0;
+    RCLCPP_INFO(get_logger(),
+                "[init_gate] phase=%s prev=%s t=%.6f prev_dur_sec=%.3f "
+                "reason=%s frame_id=%lu",
+                init_gate_phase_name(next), init_gate_phase_name(prev),
+                t_sec, prev_dur, reason, frame_id);
+  }
+
+  // Update FSM on every IMU sample (post bias-correction).
+  // Called from imu_callback only.
+  void update_init_gate_imu(const sensor_msgs::msg::Imu &msg, double t_now)
+  {
+    const int phase = init_gate_phase_.load(std::memory_order_acquire);
+    if (init_gate_phase_start_sec_[static_cast<int>(InitGatePhase::WARMUP)] < 0.0) {
+      init_gate_phase_start_sec_[static_cast<int>(InitGatePhase::WARMUP)] = t_now;
+    }
+
+    // WARMUP -> AWAIT_MOTION (or TRACKING if gate disabled).
+    // We consider warmup "done" when the hardening A block finishes (either
+    // PASS or SKIP); if hardening A is disabled, we leave WARMUP on the first
+    // IMU sample.
+    if (phase == static_cast<int>(InitGatePhase::WARMUP)) {
+      const bool warmup_done = (!imu_warmup_enabled_) || warmup_complete_;
+      if (warmup_done) {
+        if (!init_gate_enabled_) {
+          // Gate disabled: collapse to TRACKING (which behaves identically to
+          // the pre-InitGate code path because image gating below is also
+          // skipped). Then immediately let the SyncWithImu transition catch
+          // IMU_READY when ORB reports it.
+          transition_init_gate(InitGatePhase::TRACKING, t_now, "gate_disabled");
+        } else {
+          init_await_motion_t0_sec_ = t_now;
+          init_motion_streak_start_sec_ = -1.0;
+          transition_init_gate(InitGatePhase::AWAIT_MOTION, t_now,
+                               warmup_complete_ ? "warmup_done" : "warmup_skipped");
+        }
+      }
+      return;
+    }
+
+    // AWAIT_MOTION -> TRACKING on sustained gyro motion OR timeout.
+    if (phase == static_cast<int>(InitGatePhase::AWAIT_MOTION)) {
+      const double gx = msg.angular_velocity.x;
+      const double gy = msg.angular_velocity.y;
+      const double gz = msg.angular_velocity.z;
+      const double gnorm = std::sqrt(gx*gx + gy*gy + gz*gz);
+      if (gnorm > init_motion_gyro_threshold_radps_) {
+        if (init_motion_streak_start_sec_ < 0.0) {
+          init_motion_streak_start_sec_ = t_now;
+        }
+        if ((t_now - init_motion_streak_start_sec_) >=
+            init_motion_sustained_sec_) {
+          transition_init_gate(InitGatePhase::TRACKING, t_now,
+                               "motion_detected");
+          return;
+        }
+      } else {
+        // streak broken by gyro dipping below threshold
+        init_motion_streak_start_sec_ = -1.0;
+      }
+      if (init_await_motion_t0_sec_ > 0.0 &&
+          (t_now - init_await_motion_t0_sec_) >=
+            init_await_motion_timeout_sec_) {
+        transition_init_gate(InitGatePhase::TRACKING, t_now,
+                             "await_timeout");
+        return;
+      }
+      return;
+    }
+    // TRACKING -> IMU_READY happens in SyncWithImu after TrackMonocular().
+  }
+
   // ── image_callback: lightweight, only buffers ───────────────────
   void image_callback(const sensor_msgs::msg::Image::SharedPtr msg)
   {
@@ -1056,6 +1184,20 @@ private:
     msg_out->header.stamp = time_now;
     msg_out->header.frame_id = "base_link";
     orb_image_publisher_->publish(*msg_out);
+
+    // InitGate: drop frames while still in WARMUP / AWAIT_MOTION so that
+    // ORB-SLAM3 only begins its monocular-inertial init once gyro bias is
+    // settled AND device motion is confirmed.
+    if (init_gate_enabled_) {
+      const int phase = init_gate_phase_.load(std::memory_order_acquire);
+      if (phase == static_cast<int>(InitGatePhase::WARMUP) ||
+          phase == static_cast<int>(InitGatePhase::AWAIT_MOTION)) {
+        dropped_img_count_++;
+        gated_img_count_++;
+        write_debug_queue_1hz(-1.0);
+        return;
+      }
+    }
 
     // Size-1 latest-only image queue (zang09 / official ORB-SLAM3 ROS_inertial pattern):
     // if a previous image is still pending consumption, drop it in favour of the
@@ -1219,6 +1361,17 @@ private:
         ns_to_ms(metrics.track_end_steady_ns - queued_image.receive_steady_ns);
       metrics.processed_image_age_ms = metrics.image_age_at_track_end_ms;
       metrics.total_frame_ms = ns_to_ms(metrics.track_end_steady_ns - frame_begin_ns);
+      // InitGate: detect TRACKING -> IMU_READY transition
+      if (track_called && init_gate_enabled_ &&
+          init_gate_phase_.load(std::memory_order_acquire) ==
+            static_cast<int>(InitGatePhase::TRACKING)) {
+        const auto state_for_gate = orb_slam3_system_->GetDebugState();
+        if (state_for_gate.imu_initialized) {
+          transition_init_gate(
+            InitGatePhase::IMU_READY, tIm, "imu_initialized",
+            static_cast<long unsigned int>(state_for_gate.frame_id));
+        }
+      }
       write_debug_track(image_header_ns, image_time, tIm, vImuMeas,
                         track_called, skip_reason, metrics);
       write_debug_queue_1hz(metrics.processed_image_age_ms);
@@ -1304,6 +1457,11 @@ private:
         msg_corrected.angular_velocity.x -= gyro_bias_raw_[0];
         msg_corrected.angular_velocity.y -= gyro_bias_raw_[1];
         msg_corrected.angular_velocity.z -= gyro_bias_raw_[2];
+      }
+      // InitGate FSM update on bias-corrected gyro
+      {
+        const double t_now = rclcpp::Time(msg.header.stamp).seconds();
+        update_init_gate_imu(msg_corrected, t_now);
       }
       const sensor_msgs::msg::Imu::SharedPtr msg_ptr =
         std::make_shared<sensor_msgs::msg::Imu>(msg_corrected);
@@ -1499,6 +1657,16 @@ private:
   double warmup_t0_sec_{-1.0};
   uint64_t warmup_sample_count_{0};
   double warmup_gyro_sum_[3]{0.0, 0.0, 0.0};
+  // InitGate state-machine config + runtime state
+  bool init_gate_enabled_{true};
+  double init_motion_gyro_threshold_radps_{3.0 * M_PI / 180.0};
+  double init_motion_sustained_sec_{0.3};
+  double init_await_motion_timeout_sec_{20.0};
+  std::atomic<int> init_gate_phase_{static_cast<int>(InitGatePhase::WARMUP)};
+  double init_gate_phase_start_sec_[4]{-1.0, -1.0, -1.0, -1.0};
+  double init_await_motion_t0_sec_{-1.0};
+  double init_motion_streak_start_sec_{-1.0};
+  std::atomic<uint64_t> gated_img_count_{0};
   double yaml_imu_frequency_{0.0};
   double observed_imu_rate_hz_{0.0};
   bool imu_yaml_warned_{false};

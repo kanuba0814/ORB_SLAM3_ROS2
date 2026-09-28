@@ -184,6 +184,26 @@ def generate_launch_description():
             description="Per-sample |gyro| threshold above which warm-up is aborted.",
         ),
         DeclareLaunchArgument(
+            "init_gate_enabled",
+            default_value="true",
+            description="InitGate: gate image buffer until warmup+motion confirmed.",
+        ),
+        DeclareLaunchArgument(
+            "init_motion_gyro_threshold_degs",
+            default_value="3.0",
+            description="AWAIT_MOTION |gyro| threshold (deg/s) to register motion.",
+        ),
+        DeclareLaunchArgument(
+            "init_motion_sustained_sec",
+            default_value="0.3",
+            description="Sustained-above-threshold duration to confirm motion.",
+        ),
+        DeclareLaunchArgument(
+            "init_await_motion_timeout_sec",
+            default_value="20.0",
+            description="Max AWAIT_MOTION wait before forcing transition to TRACKING.",
+        ),
+        DeclareLaunchArgument(
             "duration",
             default_value="0.0",
             description="Playback duration in bag time. 0 means full bag.",
@@ -303,6 +323,22 @@ def generate_launch_description():
                 ),
                 "imu_warmup_max_gyro_degs": ParameterValue(
                     LaunchConfiguration("imu_warmup_max_gyro_degs"),
+                    value_type=float,
+                ),
+                "init_gate_enabled": ParameterValue(
+                    LaunchConfiguration("init_gate_enabled"),
+                    value_type=bool,
+                ),
+                "init_motion_gyro_threshold_degs": ParameterValue(
+                    LaunchConfiguration("init_motion_gyro_threshold_degs"),
+                    value_type=float,
+                ),
+                "init_motion_sustained_sec": ParameterValue(
+                    LaunchConfiguration("init_motion_sustained_sec"),
+                    value_type=float,
+                ),
+                "init_await_motion_timeout_sec": ParameterValue(
+                    LaunchConfiguration("init_await_motion_timeout_sec"),
                     value_type=float,
                 ),
             }],

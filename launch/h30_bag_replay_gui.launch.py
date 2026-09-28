@@ -1,0 +1,344 @@
+# flake8: noqa
+"""
+Replay an H30 rosbag through the ORB-SLAM3 wrapper *with RViz GUI*.
+
+Composition:
+  - Bag replay logic ported from h30_bag_replay.launch.py (ros2 bag play
+    via OpaqueFunction, with --clock, --rate, --start-offset, optional
+    --topics filter, QoS override file, auto-shutdown on bag exit).
+  - SLAM node (imu_mono_node_cpp) configured for pre-synced /sync/* topics
+    with orb_time_offset_mode=zero_for_sync.
+  - InitGate hardcoded ON: init_gate_enabled=True. Other gate parameters
+    (motion threshold / sustained / await timeout) fall back to the C++
+    node defaults declared in imu_mono_realsense.cpp (3.0 / 0.3 / 20.0).
+  - Static TF world->map + RViz2 with point_cloud.rviz, both enabled by
+    default for visual inspection of the InitGate phases.
+"""
+
+from launch import LaunchDescription
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    OpaqueFunction,
+    RegisterEventHandler,
+    Shutdown,
+    TimerAction,
+)
+from launch.conditions import IfCondition
+from launch.event_handlers import OnProcessExit
+from launch.substitutions import LaunchConfiguration, PathJoinSubstitution
+from launch_ros.actions import Node
+from launch_ros.parameter_descriptions import ParameterValue
+from launch_ros.substitutions import FindPackageShare
+
+
+def _bag_actions(context, *args, **kwargs):
+    del args, kwargs
+    play_bag = LaunchConfiguration("play_bag").perform(context).lower()
+    if play_bag not in ("1", "true", "yes", "on"):
+        return []
+
+    bag_path = LaunchConfiguration("bag_path").perform(context)
+    rate = LaunchConfiguration("rate").perform(context)
+    start_offset = LaunchConfiguration("start_offset").perform(context)
+    duration = LaunchConfiguration("duration").perform(context)
+    play_delay = LaunchConfiguration("play_delay").perform(context)
+    replay_topics_value = LaunchConfiguration("replay_topics").perform(context)
+    qos_profile_overrides_path = LaunchConfiguration(
+        "qos_profile_overrides_path").perform(context)
+    replay_topics = [
+        topic.strip()
+        for topic in replay_topics_value.split(",")
+        if topic.strip()
+    ]
+
+    cmd = [
+        "ros2",
+        "bag",
+        "play",
+        bag_path,
+        "--clock",
+        "--rate",
+        rate,
+        "--start-offset",
+        start_offset,
+    ]
+    if replay_topics:
+        cmd.extend(["--topics", *replay_topics])
+    if qos_profile_overrides_path:
+        cmd.extend([
+            "--qos-profile-overrides-path",
+            qos_profile_overrides_path,
+        ])
+
+    shutdown_timer = []
+    try:
+        duration_value = float(duration)
+        rate_value = max(float(rate), 1e-6)
+        play_delay_value = max(float(play_delay), 0.0)
+    except ValueError:
+        duration_value = 0.0
+        rate_value = 1.0
+        play_delay_value = 0.0
+
+    if duration_value > 0.0:
+        shutdown_timer = [
+            TimerAction(
+                period=play_delay_value + (duration_value / rate_value) + 8.0,
+                actions=[Shutdown(reason="h30_bag_replay_gui duration elapsed")],
+            )
+        ]
+
+    bag_player = ExecuteProcess(
+        cmd=cmd,
+        output="screen",
+    )
+
+    return [
+        RegisterEventHandler(
+            OnProcessExit(
+                target_action=bag_player,
+                on_exit=[Shutdown(reason="h30_bag_replay_gui bag play exited")],
+            )
+        ),
+        TimerAction(period=play_delay_value, actions=[bag_player]),
+        *shutdown_timer,
+    ]
+
+
+def generate_launch_description():
+    pkg_share = FindPackageShare("orb_slam3_ros2")
+
+    return LaunchDescription([
+        DeclareLaunchArgument(
+            "bag_path",
+            default_value="",
+            description="Directory path of the rosbag2 bag to replay.",
+        ),
+        DeclareLaunchArgument(
+            "play_bag",
+            default_value="false",
+            description="Start ros2 bag play from this launch file.",
+        ),
+        DeclareLaunchArgument(
+            "sensor_type",
+            default_value="imu-monocular",
+            description="ORB-SLAM3 sensor mode: monocular or imu-monocular.",
+        ),
+        DeclareLaunchArgument("image_topic", default_value="/sync/image_raw"),
+        DeclareLaunchArgument("imu_topic", default_value="/sync/imu"),
+        DeclareLaunchArgument(
+            "settings_file",
+            default_value=PathJoinSubstitution([
+                pkg_share,
+                "config",
+                "Monocular-Inertial",
+                "rmoncam_h30.yaml",
+            ]),
+        ),
+        DeclareLaunchArgument("cam_imu_time_offset", default_value="0.0"),
+        DeclareLaunchArgument(
+            "orb_time_offset_mode",
+            default_value="zero_for_sync",
+            description="Use zero_for_sync for already synchronized topics.",
+        ),
+        DeclareLaunchArgument("debug_enable", default_value="true"),
+        DeclareLaunchArgument("debug_runtime_metrics", default_value="true"),
+        DeclareLaunchArgument("enable_video_recording", default_value="false"),
+        DeclareLaunchArgument(
+            "publish_pose_only_when_tracking_ok",
+            default_value="true",
+        ),
+        DeclareLaunchArgument("min_pose_publish_inliers", default_value="0"),
+        DeclareLaunchArgument(
+            "min_pose_publish_tracked_mappoints",
+            default_value="0",
+        ),
+        DeclareLaunchArgument("max_imu_queue_size", default_value="500"),
+        # GUI defaults differ from h30_bag_replay.launch.py: RViz on by default.
+        DeclareLaunchArgument("use_rviz", default_value="true"),
+        DeclareLaunchArgument("use_pangolin", default_value="false"),
+        DeclareLaunchArgument("rate", default_value="1.0"),
+        DeclareLaunchArgument("start_offset", default_value="0.0"),
+        DeclareLaunchArgument(
+            "replay_topics",
+            default_value="/sync/image_raw,/sync/imu",
+            description="Comma-separated rosbag topics to play for sync-only replay.",
+        ),
+        DeclareLaunchArgument(
+            "play_delay",
+            default_value="2.0",
+            description="Seconds to wait before starting ros2 bag play.",
+        ),
+        DeclareLaunchArgument("imu_accel_scale_x", default_value="1.0"),
+        DeclareLaunchArgument("imu_accel_scale_y", default_value="1.0"),
+        DeclareLaunchArgument("imu_accel_scale_z", default_value="1.0"),
+        DeclareLaunchArgument("imu_gyro_scale_x", default_value="1.0"),
+        DeclareLaunchArgument("imu_gyro_scale_y", default_value="1.0"),
+        DeclareLaunchArgument("imu_gyro_scale_z", default_value="1.0"),
+        DeclareLaunchArgument("imu_accel_axis_order", default_value="xyz"),
+        DeclareLaunchArgument("imu_gyro_axis_order", default_value="xyz"),
+        DeclareLaunchArgument(
+            "imu_warmup_enabled",
+            default_value="true",
+            description="Hardening A: enable wrapper-side warm-up gyro bias subtraction.",
+        ),
+        DeclareLaunchArgument(
+            "imu_warmup_sec",
+            default_value="3.0",
+            description="Warm-up window length in seconds (IMU stamp time).",
+        ),
+        DeclareLaunchArgument(
+            "imu_warmup_max_gyro_degs",
+            default_value="5.0",
+            description="Per-sample |gyro| threshold above which warm-up is aborted.",
+        ),
+        DeclareLaunchArgument(
+            "duration",
+            default_value="0.0",
+            description="Playback duration in bag time. 0 means full bag.",
+        ),
+        DeclareLaunchArgument(
+            "qos_profile_overrides_path",
+            default_value=PathJoinSubstitution([
+                pkg_share,
+                "config",
+                "bag_qos_override.yaml",
+            ]),
+            description="ros2 bag play QoS override YAML path.",
+        ),
+
+        Node(
+            package="orb_slam3_ros2",
+            executable="imu_mono_node_cpp",
+            output="screen",
+            parameters=[{
+                "sensor_type": ParameterValue(
+                    LaunchConfiguration("sensor_type"),
+                    value_type=str,
+                ),
+                "use_pangolin": ParameterValue(
+                    LaunchConfiguration("use_pangolin"),
+                    value_type=bool,
+                ),
+                "image_topic": ParameterValue(
+                    LaunchConfiguration("image_topic"),
+                    value_type=str,
+                ),
+                "imu_topic": ParameterValue(
+                    LaunchConfiguration("imu_topic"),
+                    value_type=str,
+                ),
+                "settings_file": ParameterValue(
+                    LaunchConfiguration("settings_file"),
+                    value_type=str,
+                ),
+                "cam_imu_time_offset":
+                    ParameterValue(
+                        LaunchConfiguration("cam_imu_time_offset"),
+                        value_type=float,
+                    ),
+                "debug_enable": ParameterValue(
+                    LaunchConfiguration("debug_enable"),
+                    value_type=bool,
+                ),
+                "debug_runtime_metrics": ParameterValue(
+                    LaunchConfiguration("debug_runtime_metrics"),
+                    value_type=bool,
+                ),
+                "enable_video_recording": ParameterValue(
+                    LaunchConfiguration("enable_video_recording"),
+                    value_type=bool,
+                ),
+                "publish_pose_only_when_tracking_ok": ParameterValue(
+                    LaunchConfiguration("publish_pose_only_when_tracking_ok"),
+                    value_type=bool,
+                ),
+                "min_pose_publish_inliers": ParameterValue(
+                    LaunchConfiguration("min_pose_publish_inliers"),
+                    value_type=int,
+                ),
+                "min_pose_publish_tracked_mappoints": ParameterValue(
+                    LaunchConfiguration("min_pose_publish_tracked_mappoints"),
+                    value_type=int,
+                ),
+                "max_imu_queue_size": ParameterValue(
+                    LaunchConfiguration("max_imu_queue_size"),
+                    value_type=int,
+                ),
+                "orb_time_offset_mode":
+                    ParameterValue(
+                        LaunchConfiguration("orb_time_offset_mode"),
+                        value_type=str,
+                    ),
+                "imu_accel_scale_x": ParameterValue(
+                    LaunchConfiguration("imu_accel_scale_x"),
+                    value_type=float,
+                ),
+                "imu_accel_scale_y": ParameterValue(
+                    LaunchConfiguration("imu_accel_scale_y"),
+                    value_type=float,
+                ),
+                "imu_accel_scale_z": ParameterValue(
+                    LaunchConfiguration("imu_accel_scale_z"),
+                    value_type=float,
+                ),
+                "imu_gyro_scale_x": ParameterValue(
+                    LaunchConfiguration("imu_gyro_scale_x"),
+                    value_type=float,
+                ),
+                "imu_gyro_scale_y": ParameterValue(
+                    LaunchConfiguration("imu_gyro_scale_y"),
+                    value_type=float,
+                ),
+                "imu_gyro_scale_z": ParameterValue(
+                    LaunchConfiguration("imu_gyro_scale_z"),
+                    value_type=float,
+                ),
+                "imu_accel_axis_order": ParameterValue(
+                    LaunchConfiguration("imu_accel_axis_order"),
+                    value_type=str,
+                ),
+                "imu_gyro_axis_order": ParameterValue(
+                    LaunchConfiguration("imu_gyro_axis_order"),
+                    value_type=str,
+                ),
+                "imu_warmup_enabled": ParameterValue(
+                    LaunchConfiguration("imu_warmup_enabled"),
+                    value_type=bool,
+                ),
+                "imu_warmup_sec": ParameterValue(
+                    LaunchConfiguration("imu_warmup_sec"),
+                    value_type=float,
+                ),
+                "imu_warmup_max_gyro_degs": ParameterValue(
+                    LaunchConfiguration("imu_warmup_max_gyro_degs"),
+                    value_type=float,
+                ),
+                # InitGate: hardcoded ON; the other gate params
+                # (motion threshold / sustained / await timeout) are
+                # intentionally omitted so the C++ node defaults apply.
+                "init_gate_enabled": True,
+            }],
+        ),
+
+        Node(
+            package="tf2_ros",
+            executable="static_transform_publisher",
+            arguments=["0", "0", "0", "0", "0", "0", "world", "map"],
+        ),
+
+        Node(
+            package="rviz2",
+            executable="rviz2",
+            output="screen",
+            arguments=["-d", PathJoinSubstitution([
+                pkg_share,
+                "config",
+                "point_cloud.rviz",
+            ])],
+            condition=IfCondition(LaunchConfiguration("use_rviz")),
+        ),
+
+        OpaqueFunction(function=_bag_actions),
+    ])
